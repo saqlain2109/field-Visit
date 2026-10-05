@@ -28,6 +28,9 @@ import {
   Stack,
   Paper,
   Collapse,
+  Popover,
+  ListSubheader,
+  ListItemSecondaryAction,
 } from '@mui/material';
 import {
   Dashboard as DashboardIcon,
@@ -55,8 +58,22 @@ import {
   ExpandLess as ExpandLessIcon,
   ExpandMore as ExpandMoreIcon,
   BusinessCenter as CrmIcon,
+  Devices as DevicesIcon,
+  Policy as PolicyIcon,
+  Notifications as NotificationsIcon,
+  LockOpen as UnlockIcon,
+  Warning as WarningIcon,
+  ErrorOutline as ErrorIcon,
+  Close as CloseIcon,
+  DoneAll as MarkReadIcon,
+  Shield as ShieldIcon,
 } from '@mui/icons-material';
+import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
+import { DevToolsDetector } from './DevToolsDetector';
+import { SetPasswordModal } from './SetPasswordModal';
+import { ActiveSessionsModal } from './ActiveSessionsModal';
 
 const EXPANDED_DRAWER_WIDTH = 260;
 const COLLAPSED_DRAWER_WIDTH = 74;
@@ -64,7 +81,8 @@ const COLLAPSED_DRAWER_WIDTH = 74;
 export const MainLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout } = useAuth();
+  const { user, logout, unlockAccount, adminResetPassword } = useAuth();
+  const { showToast } = useToast();
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem('crm_sidebar_collapsed') === 'true';
@@ -83,7 +101,71 @@ export const MainLayout: React.FC = () => {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [activeSessionsOpen, setActiveSessionsOpen] = useState(false);
   const [newPassword, setNewPassword] = useState('');
+
+  // Live Menu Badge Counts
+  const [menuCounts, setMenuCounts] = useState<{ [key: string]: number }>({
+    dailyVisits: 0,
+    opportunities: 0,
+    quotations: 0,
+    customers: 0,
+    contacts: 0,
+    employees: 0,
+    approvals: 0,
+    loginLogs: 0,
+    activeLockouts: 0,
+    securityIncidents: 0,
+  });
+
+  // Live Notifications
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notificationAnchor, setNotificationAnchor] = useState<null | HTMLElement>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Quick Action Reset Password Modal from Notification
+  const [notificationResetOpen, setNotificationResetOpen] = useState(false);
+  const [selectedNotifyEmp, setSelectedNotifyEmp] = useState<any>(null);
+  const [notifyAdminPassword, setNotifyAdminPassword] = useState('Enterprise@2026');
+
+  // First-Time Login Password Prompt: auto-open only if user hasn't set their password yet AND hasn't clicked "Do It Later"
+  const [setPasswordPromptOpen, setSetPasswordPromptOpen] = useState(() => {
+    if (!user) return false;
+    const isDismissed = localStorage.getItem(`password_prompt_dismissed_${user.id}`) === 'true';
+    return user.isPasswordSet === false && !isDismissed;
+  });
+
+  useEffect(() => {
+    if (user && user.isPasswordSet === false) {
+      const isDismissed = localStorage.getItem(`password_prompt_dismissed_${user.id}`) === 'true';
+      if (!isDismissed) {
+        setSetPasswordPromptOpen(true);
+      }
+    }
+  }, [user?.isPasswordSet, user?.id]);
+
+  // Fetch Live Menu Counts & Notifications
+  const fetchCountsAndNotifications = async () => {
+    try {
+      const [countsRes, notifRes]: [any, any] = await Promise.all([
+        api.get('/auth/menu-counts'),
+        api.get('/auth/notifications'),
+      ]);
+      if (countsRes) setMenuCounts(countsRes);
+      if (notifRes) {
+        setNotifications(notifRes);
+        setUnreadCount(notifRes.length);
+      }
+    } catch (e) {
+      // Background poll silently continues
+    }
+  };
+
+  useEffect(() => {
+    fetchCountsAndNotifications();
+    const interval = setInterval(fetchCountsAndNotifications, 25000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -117,22 +199,22 @@ export const MainLayout: React.FC = () => {
 
   const topMenuItems = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/', roles: ['ADMIN', 'MANAGER', 'SALES_EXEC', 'SERVICE_ENG'] },
-    { text: 'Daily Visits', icon: <VisitsIcon />, path: '/daily-visits', roles: ['ADMIN', 'MANAGER', 'SALES_EXEC', 'SERVICE_ENG'] },
+    { text: 'Daily Visits', icon: <VisitsIcon />, path: '/daily-visits', countKey: 'dailyVisits', roles: ['ADMIN', 'MANAGER', 'SALES_EXEC', 'SERVICE_ENG'] },
   ];
 
   const crmSubItems = [
-    { text: 'Opportunities & Pipeline', icon: <OpportunityIcon />, path: '/crm/opportunities', roles: ['ADMIN', 'MANAGER', 'SALES_EXEC'] },
-    { text: 'Quotations & Revisions', icon: <QuotationIcon />, path: '/crm/quotations', roles: ['ADMIN', 'MANAGER', 'SALES_EXEC'] },
+    { text: 'Opportunities & Pipeline', icon: <OpportunityIcon />, path: '/crm/opportunities', countKey: 'opportunities', roles: ['ADMIN', 'MANAGER', 'SALES_EXEC'] },
+    { text: 'Quotations & Revisions', icon: <QuotationIcon />, path: '/crm/quotations', countKey: 'quotations', roles: ['ADMIN', 'MANAGER', 'SALES_EXEC'] },
   ];
 
   const bottomMenuItems = [
-    { text: 'Customers', icon: <CustomersIcon />, path: '/customers', roles: ['ADMIN', 'MANAGER', 'SALES_EXEC', 'SERVICE_ENG'] },
-    { text: 'Contacts', icon: <ContactsIcon />, path: '/contacts', roles: ['ADMIN', 'MANAGER', 'SALES_EXEC', 'SERVICE_ENG'] },
-    { text: 'Employees', icon: <EmployeesIcon />, path: '/employees', roles: ['ADMIN', 'MANAGER'] },
-    { text: 'Approvals Inbox', icon: <ApprovalsIcon />, path: '/approvals', roles: ['ADMIN', 'MANAGER'] },
+    { text: 'Customers', icon: <CustomersIcon />, path: '/customers', countKey: 'customers', roles: ['ADMIN', 'MANAGER', 'SALES_EXEC', 'SERVICE_ENG'] },
+    { text: 'Contacts', icon: <ContactsIcon />, path: '/contacts', countKey: 'contacts', roles: ['ADMIN', 'MANAGER', 'SALES_EXEC', 'SERVICE_ENG'] },
+    { text: 'Employees', icon: <EmployeesIcon />, path: '/employees', countKey: 'employees', roles: ['ADMIN', 'MANAGER'] },
+    { text: 'Approvals Inbox', icon: <ApprovalsIcon />, path: '/approvals', countKey: 'approvals', highlight: true, roles: ['ADMIN', 'MANAGER'] },
     { text: 'Monthly Report', icon: <ReportsIcon />, path: '/reports/monthly', roles: ['ADMIN', 'MANAGER', 'SALES_EXEC', 'SERVICE_ENG'] },
     { text: 'Master Data Management', icon: <MastersIcon />, path: '/masters', roles: ['ADMIN'] },
-    { text: 'User Security Matrix', icon: <SecurityIcon />, path: '/user-management', roles: ['ADMIN'] },
+    { text: 'Login Logs & Audit', icon: <PolicyIcon />, path: '/login-logs', countKey: 'loginLogs', alertKey: 'activeLockouts', roles: ['ADMIN', 'MANAGER', 'SALES_EXEC', 'SERVICE_ENG'] },
   ];
 
   // RBAC Filtering based on user role
@@ -157,6 +239,37 @@ export const MainLayout: React.FC = () => {
   };
 
   const roleInfo = getRoleBadge(userRole);
+
+  // Quick Action Handlers from Notification Drawer
+  const handleUnlockFromNotification = async (targetId: number, targetName: string) => {
+    try {
+      await unlockAccount(targetId);
+      showToast(`Account for ${targetName || 'Employee'} unlocked successfully!`, 'success');
+      fetchCountsAndNotifications();
+    } catch (e: any) {
+      showToast(e?.response?.data?.message || 'Failed to unlock account', 'error');
+    }
+  };
+
+  const handleOpenResetFromNotification = (item: any) => {
+    setSelectedNotifyEmp({ id: item.targetId, name: item.targetName || item.targetEmail });
+    setNotifyAdminPassword('Password@123');
+    setNotificationResetOpen(true);
+    setNotificationAnchor(null);
+  };
+
+  const handleSaveNotifyPassword = async () => {
+    if (!selectedNotifyEmp) return;
+    try {
+      await adminResetPassword(selectedNotifyEmp.id, notifyAdminPassword);
+      showToast(`Password updated and account unlocked for ${selectedNotifyEmp.name}`, 'success');
+      setNotificationResetOpen(false);
+      fetchCountsAndNotifications();
+    } catch (e: any) {
+      const errMsg = typeof e === 'string' ? e : e?.response?.data?.message || e?.message || 'Password policy violation (min 8 chars, upper, lower, number, special)';
+      showToast(errMsg, 'error');
+    }
+  };
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
@@ -214,8 +327,31 @@ export const MainLayout: React.FC = () => {
             />
           </Box>
 
-          {/* Right Controls: User Profile + Explicit Logout Header Button */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, sm: 2 } }}>
+          {/* Right Controls: Notifications Bell + User Profile + Direct Logout Header Button */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, sm: 1.5 } }}>
+            {/* Live Notifications Bell (Only for ADMIN role) */}
+            {user?.role === 'ADMIN' && (
+              <Tooltip title="Security Alerts & Audit Notifications">
+                <IconButton
+                  onClick={(e) => setNotificationAnchor(e.currentTarget)}
+                  sx={{
+                    color: unreadCount > 0 ? '#DC2626' : '#64748B',
+                    bgcolor: unreadCount > 0 ? 'rgba(239, 68, 68, 0.08)' : '#F1F5F9',
+                    border: unreadCount > 0 ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid #E2E8F0',
+                    borderRadius: 2,
+                    p: 0.8,
+                    '&:hover': {
+                      bgcolor: unreadCount > 0 ? 'rgba(239, 68, 68, 0.15)' : '#E2E8F0',
+                    },
+                  }}
+                >
+                  <Badge badgeContent={unreadCount} color="error" max={99}>
+                    <NotificationsIcon fontSize="small" />
+                  </Badge>
+                </IconButton>
+              </Tooltip>
+            )}
+
             {/* Clickable User Identity Pill */}
             <Tooltip title="View My Profile">
               <Box
@@ -262,7 +398,7 @@ export const MainLayout: React.FC = () => {
               </Box>
             </Tooltip>
 
-            {/* Direct Logout Button on Header (As Requested) */}
+            {/* Direct Logout Button on Header */}
             <Tooltip title="Sign Out of CRM">
               <Button
                 variant="outlined"
@@ -357,6 +493,17 @@ export const MainLayout: React.FC = () => {
             <MenuItem
               onClick={() => {
                 handleMenuClose();
+                setActiveSessionsOpen(true);
+              }}
+              sx={{ borderRadius: 1.5, py: 1, gap: 1.5 }}
+            >
+              <DevicesIcon fontSize="small" sx={{ color: 'info.main' }} />
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>Active Sessions & Devices</Typography>
+            </MenuItem>
+
+            <MenuItem
+              onClick={() => {
+                handleMenuClose();
                 setPasswordModalOpen(true);
               }}
               sx={{ borderRadius: 1.5, py: 1, gap: 1.5 }}
@@ -372,6 +519,128 @@ export const MainLayout: React.FC = () => {
               <Typography variant="body2" sx={{ fontWeight: 700 }}>Logout</Typography>
             </MenuItem>
           </Menu>
+
+          {/* Interactive Notifications Center Popover */}
+          <Popover
+            open={Boolean(notificationAnchor)}
+            anchorEl={notificationAnchor}
+            onClose={() => setNotificationAnchor(null)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+            PaperProps={{
+              sx: {
+                width: 380,
+                maxHeight: 520,
+                borderRadius: 3,
+                boxShadow: '0 20px 30px -10px rgba(15, 23, 42, 0.2)',
+                border: '1px solid #E2E8F0',
+                overflow: 'hidden',
+              },
+            }}
+          >
+            <Box sx={{ p: 2, bgcolor: '#F8FAFC', borderBottom: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <ShieldIcon color="primary" sx={{ fontSize: 20 }} />
+                <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#0F172A' }}>
+                  Security Alerts & Audit Logs ({notifications.length})
+                </Typography>
+              </Box>
+              <Button
+                size="small"
+                startIcon={<MarkReadIcon fontSize="small" />}
+                onClick={() => {
+                  setUnreadCount(0);
+                  showToast('All notifications marked as read', 'info');
+                }}
+                sx={{ fontSize: '0.72rem', textTransform: 'none', fontWeight: 600 }}
+              >
+                Mark Read
+              </Button>
+            </Box>
+
+            <Box sx={{ maxHeight: 420, overflowY: 'auto', p: 1 }}>
+              {notifications.length === 0 ? (
+                <Box sx={{ p: 4, textAlign: 'center', color: '#64748B' }}>
+                  <CheckCircleIcon sx={{ color: '#10B981', fontSize: 32, mb: 1 }} />
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>No active security alerts</Typography>
+                  <Typography variant="caption">System is secure and all logins are normal.</Typography>
+                </Box>
+              ) : (
+                notifications.map((item, idx) => (
+                  <Paper
+                    key={item.id || idx}
+                    elevation={0}
+                    sx={{
+                      p: 1.5,
+                      mb: 1,
+                      borderRadius: 2,
+                      bgcolor: item.severity === 'error' ? '#FEF2F2' : item.severity === 'warning' ? '#FFFBEB' : '#F8FAFC',
+                      border: `1px solid ${item.severity === 'error' ? '#FECACA' : item.severity === 'warning' ? '#FDE68A' : '#E2E8F0'}`,
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.2 }}>
+                      {item.severity === 'error' ? (
+                        <ErrorIcon color="error" sx={{ fontSize: 20, mt: 0.2 }} />
+                      ) : (
+                        <WarningIcon sx={{ color: '#F59E0B', fontSize: 20, mt: 0.2 }} />
+                      )}
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 700, fontSize: '0.82rem', color: '#0F172A', lineHeight: 1.2 }}>
+                          {item.title}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#475569', display: 'block', mt: 0.4, lineHeight: 1.3 }}>
+                          {item.message}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#94A3B8', fontSize: '0.68rem', display: 'block', mt: 0.5 }}>
+                          {new Date(item.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                        </Typography>
+
+                        {/* Quick Action Button directly inside Notification */}
+                        <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
+                          {item.actionType === 'UNLOCK_USER' && (
+                            <Button
+                              size="small"
+                              variant="contained"
+                              color="success"
+                              startIcon={<UnlockIcon sx={{ fontSize: '14px !important' }} />}
+                              onClick={() => handleUnlockFromNotification(item.targetId, item.targetName)}
+                              sx={{ py: 0.3, px: 1.2, fontSize: '0.72rem', fontWeight: 700, textTransform: 'none', borderRadius: 1.5 }}
+                            >
+                              Unlock Account
+                            </Button>
+                          )}
+
+                          {item.actionType === 'RESET_PASSWORD' && (
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              color="primary"
+                              onClick={() => handleOpenResetFromNotification(item)}
+                              sx={{ py: 0.3, px: 1.2, fontSize: '0.72rem', fontWeight: 700, textTransform: 'none', borderRadius: 1.5 }}
+                            >
+                              Reset Password
+                            </Button>
+                          )}
+
+                          <Button
+                            size="small"
+                            variant="text"
+                            onClick={() => {
+                              setNotificationAnchor(null);
+                              navigate('/login-logs');
+                            }}
+                            sx={{ py: 0.3, px: 1, fontSize: '0.72rem', fontWeight: 600, textTransform: 'none', color: '#64748B' }}
+                          >
+                            View Audit Log →
+                          </Button>
+                        </Box>
+                      </Box>
+                    </Box>
+                  </Paper>
+                ))
+              )}
+            </Box>
+          </Popover>
         </Toolbar>
       </AppBar>
 
@@ -490,11 +759,14 @@ export const MainLayout: React.FC = () => {
 
         <Divider sx={{ borderColor: 'rgba(255, 255, 255, 0.08)', mb: 1 }} />
 
-        {/* Navigation List */}
+        {/* Navigation List with Live Count Badges */}
         <List sx={{ px: sidebarCollapsed ? 1 : 1.5, py: 0.5 }}>
           {/* Top Items: Dashboard, Daily Visits */}
-          {filteredTopItems.map((item) => {
+          {filteredTopItems.map((item: any) => {
             const isActive = location.pathname === item.path;
+            const count = item.countKey ? (menuCounts[item.countKey] || 0) : 0;
+            const showBadge = Boolean(item.countKey && count > 0);
+
             const buttonContent = (
               <ListItemButton
                 onClick={() => navigate(item.path)}
@@ -525,14 +797,30 @@ export const MainLayout: React.FC = () => {
                   {item.icon}
                 </ListItemIcon>
                 {!sidebarCollapsed && (
-                  <ListItemText
-                    primary={item.text}
-                    primaryTypographyProps={{
-                      fontSize: '0.85rem',
-                      fontWeight: isActive ? 700 : 500,
-                      noWrap: true,
-                    }}
-                  />
+                  <>
+                    <ListItemText
+                      primary={item.text}
+                      primaryTypographyProps={{
+                        fontSize: '0.85rem',
+                        fontWeight: isActive ? 700 : 500,
+                        noWrap: true,
+                      }}
+                    />
+                    {showBadge && (
+                      <Chip
+                        label={count}
+                        size="small"
+                        sx={{
+                          height: 20,
+                          minWidth: 24,
+                          fontSize: '0.68rem',
+                          fontWeight: 700,
+                          bgcolor: isActive ? 'rgba(255, 255, 255, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+                          color: '#FFFFFF',
+                        }}
+                      />
+                    )}
+                  </>
                 )}
               </ListItemButton>
             );
@@ -540,7 +828,7 @@ export const MainLayout: React.FC = () => {
             return (
               <ListItem key={item.text} disablePadding sx={{ mb: 0.6 }}>
                 {sidebarCollapsed ? (
-                  <Tooltip title={item.text} placement="right" arrow>
+                  <Tooltip title={showBadge ? `${item.text} (${count})` : item.text} placement="right" arrow>
                     {buttonContent}
                   </Tooltip>
                 ) : (
@@ -608,7 +896,7 @@ export const MainLayout: React.FC = () => {
                       <CrmIcon />
                     </ListItemIcon>
                     <ListItemText
-                      primary="CRM Module"
+                      primary="CRM Sales Pipeline"
                       primaryTypographyProps={{
                         fontSize: '0.85rem',
                         fontWeight: 700,
@@ -622,133 +910,156 @@ export const MainLayout: React.FC = () => {
                       <ExpandMoreIcon sx={{ fontSize: 18, color: '#94A3B8' }} />
                     )}
                   </ListItemButton>
-                )}
-              </ListItem>
+              )}
+            </ListItem>
 
-              {/* Sub-items: Opportunities & Pipeline, Quotations & Revisions */}
-              {!sidebarCollapsed ? (
-                <Collapse in={crmMenuOpen} timeout="auto" unmountOnExit>
-                  <List disablePadding sx={{ mb: 0.6 }}>
-                    {crmSubItems.map((subItem) => {
-                      const isActive = location.pathname === subItem.path;
-                      return (
-                        <ListItem key={subItem.text} disablePadding sx={{ mb: 0.4 }}>
-                          <ListItemButton
-                            onClick={() => navigate(subItem.path)}
-                            sx={{
-                              borderRadius: 2,
-                              bgcolor: isActive ? 'primary.main' : 'rgba(255, 255, 255, 0.02)',
-                              color: isActive ? '#FFFFFF' : '#CBD5E1',
-                              boxShadow: isActive ? '0 4px 12px rgba(79, 70, 229, 0.35)' : 'none',
-                              py: 0.85,
-                              pl: 3.5,
-                              pr: 1.5,
-                              transition: 'all 0.2s ease',
-                              '&:hover': {
-                                bgcolor: isActive ? 'primary.main' : 'rgba(255, 255, 255, 0.06)',
-                                color: '#FFFFFF',
-                                transform: 'translateX(3px)',
-                              },
-                            }}
-                          >
-                            <ListItemIcon
-                              sx={{
-                                color: isActive ? '#FFFFFF' : '#818CF8',
-                                minWidth: 26,
-                                mr: 1,
-                                justifyContent: 'center',
-                              }}
-                            >
-                              {subItem.icon}
-                            </ListItemIcon>
-                            <ListItemText
-                              primary={`-- ${subItem.text}`}
-                              primaryTypographyProps={{
-                                fontSize: '0.8rem',
-                                fontWeight: isActive ? 700 : 500,
-                                noWrap: true,
-                              }}
-                            />
-                          </ListItemButton>
-                        </ListItem>
-                      );
-                    })}
-                  </List>
-                </Collapse>
-              ) : (
-                crmSubItems.map((subItem) => {
-                  const isActive = location.pathname === subItem.path;
-                  return (
-                    <ListItem key={subItem.text} disablePadding sx={{ mb: 0.6 }}>
-                      <Tooltip title={`CRM: ${subItem.text}`} placement="right" arrow>
+            {/* Sub-items: Opportunities & Pipeline, Quotations & Revisions */}
+            {!sidebarCollapsed ? (
+              <Collapse in={crmMenuOpen} timeout="auto" unmountOnExit>
+                <List disablePadding sx={{ mb: 0.6 }}>
+                  {crmSubItems.map((subItem: any) => {
+                    const isActive = location.pathname === subItem.path;
+                    const count = subItem.countKey ? (menuCounts[subItem.countKey] || 0) : 0;
+                    const showSubBadge = Boolean(subItem.countKey && count > 0);
+                    return (
+                      <ListItem key={subItem.text} disablePadding sx={{ mb: 0.4 }}>
                         <ListItemButton
                           onClick={() => navigate(subItem.path)}
                           sx={{
                             borderRadius: 2,
-                            bgcolor: isActive ? 'primary.main' : 'transparent',
-                            color: isActive ? '#FFFFFF' : '#818CF8',
+                            bgcolor: isActive ? 'primary.main' : 'rgba(255, 255, 255, 0.02)',
+                            color: isActive ? '#FFFFFF' : '#CBD5E1',
                             boxShadow: isActive ? '0 4px 12px rgba(79, 70, 229, 0.35)' : 'none',
-                            py: 1,
-                            px: 1,
-                            justifyContent: 'center',
+                            py: 0.85,
+                            pl: 3.5,
+                            pr: 1.5,
                             transition: 'all 0.2s ease',
                             '&:hover': {
                               bgcolor: isActive ? 'primary.main' : 'rgba(255, 255, 255, 0.06)',
                               color: '#FFFFFF',
+                              transform: 'translateX(3px)',
                             },
                           }}
                         >
                           <ListItemIcon
                             sx={{
                               color: isActive ? '#FFFFFF' : '#818CF8',
-                              minWidth: 0,
+                              minWidth: 26,
+                              mr: 1,
                               justifyContent: 'center',
                             }}
                           >
                             {subItem.icon}
                           </ListItemIcon>
+                          <ListItemText
+                            primary={`-- ${subItem.text}`}
+                            primaryTypographyProps={{
+                              fontSize: '0.8rem',
+                              fontWeight: isActive ? 700 : 500,
+                              noWrap: true,
+                            }}
+                          />
+                          {showSubBadge && (
+                            <Chip
+                              label={count}
+                              size="small"
+                              sx={{
+                                height: 18,
+                                fontSize: '0.65rem',
+                                fontWeight: 700,
+                                bgcolor: 'rgba(255, 255, 255, 0.08)',
+                                color: '#FFFFFF',
+                              }}
+                            />
+                          )}
                         </ListItemButton>
-                      </Tooltip>
-                    </ListItem>
-                  );
-                })
-              )}
-            </>
-          )}
+                      </ListItem>
+                    );
+                  })}
+                </List>
+              </Collapse>
+            ) : (
+              crmSubItems.map((subItem: any) => {
+                const isActive = location.pathname === subItem.path;
+                const count = subItem.countKey ? (menuCounts[subItem.countKey] || 0) : 0;
+                const showSubBadge = Boolean(subItem.countKey && count > 0);
+                return (
+                  <ListItem key={subItem.text} disablePadding sx={{ mb: 0.6 }}>
+                    <Tooltip title={showSubBadge ? `CRM: ${subItem.text} (${count})` : `CRM: ${subItem.text}`} placement="right" arrow>
+                      <ListItemButton
+                        onClick={() => navigate(subItem.path)}
+                        sx={{
+                          borderRadius: 2,
+                          bgcolor: isActive ? 'primary.main' : 'transparent',
+                          color: isActive ? '#FFFFFF' : '#818CF8',
+                          boxShadow: isActive ? '0 4px 12px rgba(79, 70, 229, 0.35)' : 'none',
+                          py: 1,
+                          px: 1,
+                          justifyContent: 'center',
+                          transition: 'all 0.2s ease',
+                          '&:hover': {
+                            bgcolor: isActive ? 'primary.main' : 'rgba(255, 255, 255, 0.06)',
+                            color: '#FFFFFF',
+                          },
+                        }}
+                      >
+                        <ListItemIcon
+                          sx={{
+                            color: isActive ? '#FFFFFF' : '#818CF8',
+                            minWidth: 0,
+                            justifyContent: 'center',
+                          }}
+                        >
+                          {subItem.icon}
+                        </ListItemIcon>
+                      </ListItemButton>
+                    </Tooltip>
+                  </ListItem>
+                );
+              })
+            )}
+          </>
+        )}
 
-          {/* Bottom Items: Customers, Contacts, Employees, Approvals, Reports, Masters, Security */}
-          {filteredBottomItems.map((item) => {
-            const isActive = location.pathname === item.path;
-            const buttonContent = (
-              <ListItemButton
-                onClick={() => navigate(item.path)}
+        {/* Bottom Items: Customers, Contacts, Employees, Approvals, Reports, Masters, Security, Login Logs */}
+        {filteredBottomItems.map((item: any) => {
+          const isActive = location.pathname === item.path;
+          const count = item.countKey ? (menuCounts[item.countKey] || 0) : 0;
+          const hasAlert = item.alertKey && (menuCounts[item.alertKey] || 0) > 0;
+          const isApprovalsAlert = item.text === 'Approvals Inbox' && (menuCounts.approvals || 0) > 0;
+          const showBadge = Boolean(hasAlert || (item.countKey && count > 0));
+
+          const buttonContent = (
+            <ListItemButton
+              onClick={() => navigate(item.path)}
+              sx={{
+                borderRadius: 2,
+                bgcolor: isActive ? 'primary.main' : 'transparent',
+                color: isActive ? '#FFFFFF' : '#94A3B8',
+                boxShadow: isActive ? '0 4px 12px rgba(79, 70, 229, 0.35)' : 'none',
+                py: 1.1,
+                px: sidebarCollapsed ? 1 : 1.5,
+                justifyContent: sidebarCollapsed ? 'center' : 'initial',
+                transition: 'all 0.2s ease',
+                '&:hover': {
+                  bgcolor: isActive ? 'primary.main' : 'rgba(255, 255, 255, 0.06)',
+                  color: '#FFFFFF',
+                  transform: sidebarCollapsed ? 'none' : 'translateX(2px)',
+                },
+              }}
+            >
+              <ListItemIcon
                 sx={{
-                  borderRadius: 2,
-                  bgcolor: isActive ? 'primary.main' : 'transparent',
-                  color: isActive ? '#FFFFFF' : '#94A3B8',
-                  boxShadow: isActive ? '0 4px 12px rgba(79, 70, 229, 0.35)' : 'none',
-                  py: 1.1,
-                  px: sidebarCollapsed ? 1 : 1.5,
-                  justifyContent: sidebarCollapsed ? 'center' : 'initial',
-                  transition: 'all 0.2s ease',
-                  '&:hover': {
-                    bgcolor: isActive ? 'primary.main' : 'rgba(255, 255, 255, 0.06)',
-                    color: '#FFFFFF',
-                    transform: sidebarCollapsed ? 'none' : 'translateX(2px)',
-                  },
+                  color: isApprovalsAlert || hasAlert ? '#F87171' : isActive ? '#FFFFFF' : '#94A3B8',
+                  minWidth: sidebarCollapsed ? 0 : 36,
+                  mr: sidebarCollapsed ? 0 : 1,
+                  justifyContent: 'center',
                 }}
               >
-                <ListItemIcon
-                  sx={{
-                    color: isActive ? '#FFFFFF' : '#94A3B8',
-                    minWidth: sidebarCollapsed ? 0 : 36,
-                    mr: sidebarCollapsed ? 0 : 1,
-                    justifyContent: 'center',
-                  }}
-                >
-                  {item.icon}
-                </ListItemIcon>
-                {!sidebarCollapsed && (
+                {item.icon}
+              </ListItemIcon>
+              {!sidebarCollapsed && (
+                <>
                   <ListItemText
                     primary={item.text}
                     primaryTypographyProps={{
@@ -757,22 +1068,41 @@ export const MainLayout: React.FC = () => {
                       noWrap: true,
                     }}
                   />
-                )}
-              </ListItemButton>
-            );
+                  {showBadge && (
+                    <Chip
+                      label={hasAlert ? `${menuCounts[item.alertKey]} alert` : count}
+                      size="small"
+                      sx={{
+                        height: 20,
+                        minWidth: 24,
+                        fontSize: '0.68rem',
+                        fontWeight: 700,
+                        bgcolor: isApprovalsAlert || hasAlert
+                          ? '#EF4444'
+                          : isActive
+                          ? 'rgba(255, 255, 255, 0.25)'
+                          : 'rgba(255, 255, 255, 0.08)',
+                        color: '#FFFFFF',
+                      }}
+                    />
+                  )}
+                </>
+              )}
+            </ListItemButton>
+          );
 
-            return (
-              <ListItem key={item.text} disablePadding sx={{ mb: 0.6 }}>
-                {sidebarCollapsed ? (
-                  <Tooltip title={item.text} placement="right" arrow>
-                    {buttonContent}
-                  </Tooltip>
-                ) : (
-                  buttonContent
-                )}
-              </ListItem>
-            );
-          })}
+          return (
+            <ListItem key={item.text} disablePadding sx={{ mb: 0.6 }}>
+              {sidebarCollapsed ? (
+                <Tooltip title={showBadge ? `${item.text} (${hasAlert ? menuCounts[item.alertKey] : count})` : item.text} placement="right" arrow>
+                  {buttonContent}
+                </Tooltip>
+              ) : (
+                buttonContent
+              )}
+            </ListItem>
+          );
+        })}
         </List>
       </Drawer>
 
@@ -788,6 +1118,7 @@ export const MainLayout: React.FC = () => {
           transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
         }}
       >
+        <DevToolsDetector />
         <Outlet />
       </Box>
 
@@ -898,8 +1229,67 @@ export const MainLayout: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Notification Direct Reset Password Modal */}
+      <Dialog open={notificationResetOpen} onClose={() => setNotificationResetOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 800, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>Reset Employee Password</span>
+          <IconButton size="small" onClick={() => setNotificationResetOpen(false)}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 2.5 }}>
+          <Typography variant="body2" sx={{ mb: 2, color: '#334155' }}>
+            Set a new internal password for <strong>{selectedNotifyEmp?.name}</strong>:
+          </Typography>
+          <TextField
+            fullWidth
+            size="small"
+            label="New Compliant Password *"
+            value={notifyAdminPassword}
+            onChange={(e) => setNotifyAdminPassword(e.target.value)}
+            helperText="Min 8 chars with Uppercase, Lowercase, Number & Special Character."
+            sx={{ mb: 2 }}
+          />
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            <Chip
+              label="Quick: Password@123"
+              size="small"
+              onClick={() => setNotifyAdminPassword('Password@123')}
+              clickable
+              color={notifyAdminPassword === 'Password@123' ? 'primary' : 'default'}
+              sx={{ fontWeight: 600, fontSize: '0.75rem' }}
+            />
+            <Chip
+              label="Quick: Admin@2026"
+              size="small"
+              onClick={() => setNotifyAdminPassword('Admin@2026')}
+              clickable
+              color={notifyAdminPassword === 'Admin@2026' ? 'primary' : 'default'}
+              sx={{ fontWeight: 600, fontSize: '0.75rem' }}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
+          <Button onClick={() => setNotificationResetOpen(false)}>Cancel</Button>
+          <Button variant="contained" color="primary" onClick={handleSaveNotifyPassword} sx={{ fontWeight: 700 }}>
+            UPDATE & UNLOCK
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* First-Time Login / Required Set Password Modal */}
+      <SetPasswordModal
+        open={setPasswordPromptOpen}
+        onClose={() => setSetPasswordPromptOpen(false)}
+      />
+
+      {/* Active Sessions & Remote Devices Revocation Modal */}
+      <ActiveSessionsModal
+        open={activeSessionsOpen}
+        onClose={() => setActiveSessionsOpen(false)}
+      />
     </Box>
   );
 };
 export default MainLayout;
-

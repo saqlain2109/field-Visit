@@ -79,6 +79,34 @@ public class Employee {
     @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
 
+    @Column(name = "is_password_set")
+    @Builder.Default
+    private Boolean isPasswordSet = true;
+
+    @Column(name = "password_changed_at")
+    private LocalDateTime passwordChangedAt;
+
+    @Column(name = "is_locked")
+    @Builder.Default
+    private Boolean isLocked = false;
+
+    @Column(name = "lockout_expires_at")
+    private LocalDateTime lockoutExpiresAt;
+
+    @Column(name = "failed_login_attempts")
+    @Builder.Default
+    private Integer failedLoginAttempts = 0;
+
+    @Column(name = "lockout_tier")
+    @Builder.Default
+    private Integer lockoutTier = 0;
+
+    @Column(name = "last_login_ip", length = 64)
+    private String lastLoginIp;
+
+    @Column(name = "last_login_time")
+    private LocalDateTime lastLoginTime;
+
     @Column(nullable = false, length = 30)
     @Builder.Default
     private String role = "SERVICE_ENG";

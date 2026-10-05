@@ -34,4 +34,10 @@ public interface DailyVisitRepository extends JpaRepository<DailyVisit, Integer>
                                          @Param("customerId") Integer customerId,
                                          @Param("startDate") LocalDate startDate,
                                          @Param("endDate") LocalDate endDate);
+
+    long countByEmployeeId(Integer employeeId);
+
+    long countByStatusIn(List<String> statuses);
+
+    long countByEmployeeIdAndStatusIn(Integer employeeId, List<String> statuses);
 }

@@ -23,8 +23,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<ApiResponse<Object>> handleBadCredentials(BadCredentialsException ex) {
+        String msg = (ex.getMessage() != null && !ex.getMessage().isBlank() && !"Bad credentials".equalsIgnoreCase(ex.getMessage()))
+                ? ex.getMessage()
+                : "Invalid email/employee ID or password";
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(ApiResponse.error(HttpStatus.UNAUTHORIZED.value(), "Invalid email/employee ID or password"));
+                .body(ApiResponse.error(HttpStatus.UNAUTHORIZED.value(), msg));
     }
 
     @ExceptionHandler(AccessDeniedException.class)

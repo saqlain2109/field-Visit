@@ -248,12 +248,18 @@ public class DatabaseSeeder implements CommandLineRunner {
                         .passwordHash(hash)
                         .role("ADMIN")
                         .grade("GRADE_A")
+                        .isLocked(false)
+                        .isPasswordSet(true)
+                        .failedLoginAttempts(0)
                         .build());
             } else {
                 Employee admin = adminOpt.get();
                 admin.setPasswordHash(hash);
                 admin.setStatus("Active");
                 admin.setRole("ADMIN");
+                admin.setIsLocked(false);
+                admin.setIsPasswordSet(true);
+                admin.setFailedLoginAttempts(0);
                 empRepo.save(admin);
             }
 
@@ -275,12 +281,18 @@ public class DatabaseSeeder implements CommandLineRunner {
                         .passwordHash(hash)
                         .role("ADMIN")
                         .grade("GRADE_A")
+                        .isLocked(false)
+                        .isPasswordSet(true)
+                        .failedLoginAttempts(0)
                         .build());
             } else {
                 Employee iqra = iqraOpt.get();
                 iqra.setPasswordHash(hash);
                 iqra.setStatus("Active");
                 iqra.setRole("ADMIN");
+                iqra.setIsLocked(false);
+                iqra.setIsPasswordSet(true);
+                iqra.setFailedLoginAttempts(0);
                 empRepo.save(iqra);
             }
 
@@ -302,64 +314,86 @@ public class DatabaseSeeder implements CommandLineRunner {
                         .passwordHash(hash)
                         .role("SERVICE_ENG")
                         .grade("GRADE_B")
+                        .isLocked(false)
+                        .isPasswordSet(true)
+                        .failedLoginAttempts(0)
                         .build());
             } else {
                 Employee s = sureshOpt.get();
                 s.setPasswordHash(hash);
                 s.setStatus("Active");
+                s.setIsLocked(false);
+                s.setIsPasswordSet(true);
+                s.setFailedLoginAttempts(0);
                 empRepo.save(s);
             }
 
-            // 4. Sales Executive (amit@crm.com)
-            Optional<Employee> amitOpt = empRepo.findByEmail("amit@crm.com");
-            if (amitOpt.isEmpty()) {
-                empRepo.save(Employee.builder()
-                        .employeeNo("1002")
-                        .name("Amit Sharma")
-                        .gender("Male")
-                        .dob(LocalDate.of(1992, 8, 22))
-                        .departmentId(deptSales != null ? deptSales.getId() : 1)
-                        .designationId(desgSE != null ? desgSE.getId() : 1)
-                        .branchId(brBaroda != null ? brBaroda.getId() : 2)
-                        .joiningDate(LocalDate.of(2021, 3, 15))
-                        .status("Active")
-                        .mobileNo("9823456711")
-                        .email("amit@crm.com")
-                        .passwordHash(hash)
-                        .role("SALES_EXEC")
-                        .grade("GRADE_B")
-                        .build());
-            } else {
-                Employee a = amitOpt.get();
-                a.setPasswordHash(hash);
-                a.setStatus("Active");
-                empRepo.save(a);
+            // 4. Sales Executive (shiva@crm.com & amit@crm.com)
+            for (String salesEmail : List.of("shiva@crm.com", "amit@crm.com")) {
+                Optional<Employee> salesOpt = empRepo.findByEmail(salesEmail);
+                if (salesOpt.isEmpty()) {
+                    empRepo.save(Employee.builder()
+                            .employeeNo("1002")
+                            .name(salesEmail.startsWith("shiva") ? "Shiva Sharma" : "Amit Sharma")
+                            .gender("Male")
+                            .dob(LocalDate.of(1992, 8, 22))
+                            .departmentId(deptSales != null ? deptSales.getId() : 1)
+                            .designationId(desgSE != null ? desgSE.getId() : 1)
+                            .branchId(brBaroda != null ? brBaroda.getId() : 2)
+                            .joiningDate(LocalDate.of(2021, 3, 15))
+                            .status("Active")
+                            .mobileNo("9823456711")
+                            .email(salesEmail)
+                            .passwordHash(hash)
+                            .role("SALES_EXEC")
+                            .grade("GRADE_B")
+                            .isLocked(false)
+                            .isPasswordSet(true)
+                            .failedLoginAttempts(0)
+                            .build());
+                } else {
+                    Employee a = salesOpt.get();
+                    a.setPasswordHash(hash);
+                    a.setStatus("Active");
+                    a.setIsLocked(false);
+                    a.setIsPasswordSet(true);
+                    a.setFailedLoginAttempts(0);
+                    empRepo.save(a);
+                }
             }
 
-            // 5. Branch Manager (rajesh@crm.com)
-            Optional<Employee> rajeshOpt = empRepo.findByEmail("rajesh@crm.com");
-            if (rajeshOpt.isEmpty()) {
-                empRepo.save(Employee.builder()
-                        .employeeNo("1003")
-                        .name("Rajesh Patel")
-                        .gender("Male")
-                        .dob(LocalDate.of(1982, 11, 5))
-                        .departmentId(deptMgmt != null ? deptMgmt.getId() : 1)
-                        .designationId(desgBM != null ? desgBM.getId() : 3)
-                        .branchId(brMumbai != null ? brMumbai.getId() : 1)
-                        .joiningDate(LocalDate.of(2018, 6, 1))
-                        .status("Active")
-                        .mobileNo("9712345678")
-                        .email("rajesh@crm.com")
-                        .passwordHash(hash)
-                        .role("MANAGER")
-                        .grade("GRADE_A")
-                        .build());
-            } else {
-                Employee r = rajeshOpt.get();
-                r.setPasswordHash(hash);
-                r.setStatus("Active");
-                empRepo.save(r);
+            // 5. Branch Manager (manager.mumbai@crm.com & rajesh@crm.com)
+            for (String mgrEmail : List.of("manager.mumbai@crm.com", "rajesh@crm.com")) {
+                Optional<Employee> mgrOpt = empRepo.findByEmail(mgrEmail);
+                if (mgrOpt.isEmpty()) {
+                    empRepo.save(Employee.builder()
+                            .employeeNo("1003")
+                            .name("Rajesh Patel")
+                            .gender("Male")
+                            .dob(LocalDate.of(1982, 11, 5))
+                            .departmentId(deptMgmt != null ? deptMgmt.getId() : 1)
+                            .designationId(desgBM != null ? desgBM.getId() : 3)
+                            .branchId(brMumbai != null ? brMumbai.getId() : 1)
+                            .joiningDate(LocalDate.of(2018, 6, 1))
+                            .status("Active")
+                            .mobileNo("9712345678")
+                            .email(mgrEmail)
+                            .passwordHash(hash)
+                            .role("MANAGER")
+                            .grade("GRADE_A")
+                            .isLocked(false)
+                            .isPasswordSet(true)
+                            .failedLoginAttempts(0)
+                            .build());
+                } else {
+                    Employee r = mgrOpt.get();
+                    r.setPasswordHash(hash);
+                    r.setStatus("Active");
+                    r.setIsLocked(false);
+                    r.setIsPasswordSet(true);
+                    r.setFailedLoginAttempts(0);
+                    empRepo.save(r);
+                }
             }
 
             // Seed additional multi-role employees for comprehensive user role testing

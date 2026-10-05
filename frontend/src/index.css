@@ -142,3 +142,16 @@
     break-inside: avoid !important;
   }
 }
+
+/* DevTools & Security Masking Blur */
+body.devtools-security-blur table,
+body.devtools-security-blur .MuiTable-root,
+body.devtools-security-blur .sensitive-data-container,
+body.devtools-security-blur .MuiCard-root {
+  filter: blur(9px) grayscale(80%) !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  pointer-events: none !important;
+  transition: filter 0.3s ease !important;
+}
+

@@ -21,6 +21,14 @@ public class ApiResponse<T> {
     @Builder.Default
     private String timestamp = Instant.now().toString();
 
+    public static <T> ApiResponse<T> success() {
+        return ApiResponse.<T>builder()
+                .success(true)
+                .statusCode(200)
+                .timestamp(Instant.now().toString())
+                .build();
+    }
+
     public static <T> ApiResponse<T> success(T data) {
         return ApiResponse.<T>builder()
                 .success(true)

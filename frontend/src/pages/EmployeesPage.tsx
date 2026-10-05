@@ -21,6 +21,7 @@ import {
   Grid,
   IconButton,
   Tooltip,
+  Stack,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -30,6 +31,9 @@ import {
   FileDownload as DownloadIcon,
   Close as CloseIcon,
   ArrowBack as ArrowBackIcon,
+  LockReset as LockResetIcon,
+  LockOpen as LockOpenIcon,
+  VpnKey as KeyIcon,
 } from '@mui/icons-material';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -37,7 +41,7 @@ import { useToast } from '../context/ToastContext';
 import { exportToCsv } from '../utils/exportCsv';
 
 export const EmployeesPage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, adminResetPassword, adminResetAllPasswords, unlockAccount } = useAuth();
   const { showToast } = useToast();
   const isAdmin = user?.role === 'ADMIN';
 
@@ -54,6 +58,13 @@ export const EmployeesPage: React.FC = () => {
   const [openModal, setOpenModal] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+
+  // Admin Reset Password State
+  const [resetModalOpen, setResetModalOpen] = useState(false);
+  const [resetEmp, setResetEmp] = useState<any>(null);
+  const [newAdminPassword, setNewAdminPassword] = useState('Password@123');
+  const [bulkResetOpen, setBulkResetOpen] = useState(false);
+  const [bulkResetting, setBulkResetting] = useState(false);
 
   const defaultFormData = {
     employeeNo: '',
@@ -200,7 +211,18 @@ export const EmployeesPage: React.FC = () => {
                 Manage field sales executives, service engineers, branch managers, and security roles
               </Typography>
             </Box>
-            <Box sx={{ display: 'flex', gap: 1.5 }}>
+            <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
+              {isAdmin && (
+                <Button
+                  variant="outlined"
+                  color="warning"
+                  startIcon={<KeyIcon />}
+                  onClick={() => setBulkResetOpen(true)}
+                  sx={{ fontWeight: 700, textTransform: 'none' }}
+                >
+                  Quick Reset All (Password@123)
+                </Button>
+              )}
               <Button variant="outlined" startIcon={<DownloadIcon />} onClick={handleExportCsv}>
                 Export CSV
               </Button>
@@ -322,16 +344,54 @@ export const EmployeesPage: React.FC = () => {
                           />
                         </TableCell>
                         <TableCell align="center">
-                          <Tooltip title="Edit Employee">
-                            <IconButton size="small" color="primary" onClick={() => handleOpenEditModal(emp)}>
-                              <EditIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Delete Employee">
-                            <IconButton size="small" color="error" onClick={() => setDeleteId(emp.id)}>
-                              <DeleteIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
+                          <Stack direction="row" spacing={0.5} justifyContent="center">
+                            {emp.isLocked && (
+                              <Tooltip title="Unlock Locked Account">
+                                <IconButton
+                                  size="small"
+                                  color="success"
+                                  onClick={async () => {
+                                    try {
+                                      await unlockAccount(emp.id);
+                                      showToast(`Account for ${emp.name} unlocked!`, 'success');
+                                      fetchData();
+                                    } catch (e: any) {
+                                      showToast(e?.response?.data?.message || 'Failed to unlock', 'error');
+                                    }
+                                  }}
+                                >
+                                  <LockOpenIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            )}
+
+                            {isAdmin && (
+                              <Tooltip title="Admin Reset / Update Password">
+                                <IconButton
+                                  size="small"
+                                  color="secondary"
+                                  onClick={() => {
+                                    setResetEmp(emp);
+                                    setNewAdminPassword('Enterprise@2026');
+                                    setResetModalOpen(true);
+                                  }}
+                                >
+                                  <KeyIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            )}
+
+                            <Tooltip title="Edit Employee">
+                              <IconButton size="small" color="primary" onClick={() => handleOpenEditModal(emp)}>
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Delete Employee">
+                              <IconButton size="small" color="error" onClick={() => setDeleteId(emp.id)}>
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </Stack>
                         </TableCell>
                       </TableRow>
                     ))
@@ -590,6 +650,110 @@ export const EmployeesPage: React.FC = () => {
           <Button onClick={() => setDeleteId(null)}>Cancel</Button>
           <Button variant="contained" color="error" onClick={handleDeleteEmployee}>
             CONFIRM DELETE
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Admin Direct Password Reset Modal */}
+      <Dialog open={resetModalOpen} onClose={() => setResetModalOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 800, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>Reset Employee Password</span>
+          <IconButton size="small" onClick={() => setResetModalOpen(false)}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 2.5 }}>
+          <Typography variant="body2" sx={{ mb: 2, color: '#334155' }}>
+            Set a new internal password for <strong>{resetEmp?.name}</strong> (#{resetEmp?.employeeNo}):
+          </Typography>
+          <TextField
+            fullWidth
+            size="small"
+            label="New Compliant Password *"
+            value={newAdminPassword}
+            onChange={(e) => setNewAdminPassword(e.target.value)}
+            helperText="Min 8 chars with Uppercase, Lowercase, Number & Special Character."
+            sx={{ mb: 2 }}
+          />
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            <Chip
+              label="Quick: Password@123"
+              size="small"
+              onClick={() => setNewAdminPassword('Password@123')}
+              clickable
+              color={newAdminPassword === 'Password@123' ? 'primary' : 'default'}
+              sx={{ fontWeight: 600, fontSize: '0.75rem' }}
+            />
+            <Chip
+              label="Quick: Admin@2026"
+              size="small"
+              onClick={() => setNewAdminPassword('Admin@2026')}
+              clickable
+              color={newAdminPassword === 'Admin@2026' ? 'primary' : 'default'}
+              sx={{ fontWeight: 600, fontSize: '0.75rem' }}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
+          <Button onClick={() => setResetModalOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={async () => {
+              if (!resetEmp) return;
+              try {
+                await adminResetPassword(resetEmp.id, newAdminPassword);
+                showToast(`Password updated for ${resetEmp.name}`, 'success');
+                setResetModalOpen(false);
+                fetchData();
+              } catch (e: any) {
+                const errMsg = typeof e === 'string' ? e : e?.response?.data?.message || e?.message || 'Password policy violation (min 8 chars, uppercase, lowercase, number, special character)';
+                showToast(errMsg, 'error');
+              }
+            }}
+            sx={{ fontWeight: 700 }}
+          >
+            UPDATE PASSWORD
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Bulk Reset All Passwords Modal */}
+      <Dialog open={bulkResetOpen} onClose={() => setBulkResetOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 800, color: '#D97706' }}>
+          Quick Reset All Passwords
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 2.5 }}>
+          <Typography variant="body2" sx={{ color: '#334155', mb: 2 }}>
+            Are you sure you want to reset all employee passwords to <strong>Password@123</strong> and clear any active account lockouts?
+          </Typography>
+          <Alert severity="info" sx={{ fontSize: '0.8rem' }}>
+            All employees will immediately be able to sign in using their employee ID/email and <strong>Password@123</strong>.
+          </Alert>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
+          <Button onClick={() => setBulkResetOpen(false)} disabled={bulkResetting}>Cancel</Button>
+          <Button
+            variant="contained"
+            color="warning"
+            disabled={bulkResetting}
+            onClick={async () => {
+              setBulkResetting(true);
+              try {
+                const res = await adminResetAllPasswords('Password@123');
+                showToast(res?.message || 'All passwords reset to Password@123 successfully!', 'success');
+                setBulkResetOpen(false);
+                fetchData();
+              } catch (e: any) {
+                const errMsg = typeof e === 'string' ? e : e?.response?.data?.message || e?.message || 'Failed to reset all passwords';
+                showToast(errMsg, 'error');
+              } finally {
+                setBulkResetting(false);
+              }
+            }}
+            sx={{ fontWeight: 700 }}
+          >
+            {bulkResetting ? 'RESETTING...' : 'RESET ALL TO Password@123'}
           </Button>
         </DialogActions>
       </Dialog>

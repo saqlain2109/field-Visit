@@ -8,28 +8,28 @@ import {
   Button,
   Alert,
   CircularProgress,
-  Container,
   InputAdornment,
   IconButton,
-  Grid,
-  Chip,
+  Divider,
+  MenuItem,
+  Select,
+  FormControl,
+  InputLabel,
   Avatar,
   Paper,
-  Divider,
+  SelectChangeEvent,
 } from '@mui/material';
 import {
   Visibility,
   VisibilityOff,
-  Lock,
-  Person,
-  AdminPanelSettings,
-  SupervisorAccount,
-  BusinessCenter,
-  Engineering,
-  CheckCircle,
-  ArrowForward,
-  Storage,
-  VpnKey,
+  LockOutlined,
+  EmailOutlined,
+  AdminPanelSettingsOutlined,
+  SupervisorAccountOutlined,
+  BusinessCenterOutlined,
+  EngineeringOutlined,
+  ShieldOutlined,
+  WarningAmberOutlined,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { AccountInfo } from '@azure/msal-browser';
@@ -60,12 +60,7 @@ interface RolePreset {
   name: string;
   email: string;
   password: string;
-  badge: string;
-  badgeColor: 'error' | 'secondary' | 'warning' | 'info';
-  themeColor: string;
   icon: React.ReactNode;
-  branch: string;
-  description: string;
 }
 
 const ROLE_PRESETS: RolePreset[] = [
@@ -76,12 +71,7 @@ const ROLE_PRESETS: RolePreset[] = [
     name: 'System Administrator',
     email: 'admin@crm.com',
     password: 'Password@123',
-    badge: 'ADMIN',
-    badgeColor: 'error',
-    themeColor: '#4F46E5',
-    icon: <AdminPanelSettings sx={{ fontSize: 24 }} />,
-    branch: 'Mumbai HQ',
-    description: 'Full administrative access: master tables, system config & all employee visit claims',
+    icon: <AdminPanelSettingsOutlined sx={{ fontSize: 20, color: '#4F46E5' }} />,
   },
   {
     id: 'manager',
@@ -90,12 +80,7 @@ const ROLE_PRESETS: RolePreset[] = [
     name: 'Rajesh Patel',
     email: 'rajesh@crm.com',
     password: 'Password@123',
-    badge: 'MANAGER',
-    badgeColor: 'secondary',
-    themeColor: '#0EA5E9',
-    icon: <SupervisorAccount sx={{ fontSize: 24 }} />,
-    branch: 'Mumbai HQ',
-    description: 'Review claims inbox, mass approve/reject expenses, branch reporting & oversight',
+    icon: <SupervisorAccountOutlined sx={{ fontSize: 20, color: '#0EA5E9' }} />,
   },
   {
     id: 'sales',
@@ -104,12 +89,7 @@ const ROLE_PRESETS: RolePreset[] = [
     name: 'Amit Sharma',
     email: 'amit@crm.com',
     password: 'Password@123',
-    badge: 'SALES_EXEC',
-    badgeColor: 'warning',
-    themeColor: '#F59E0B',
-    icon: <BusinessCenter sx={{ fontSize: 24 }} />,
-    branch: 'Baroda Branch',
-    description: 'Customer creation, contact management, daily visit itineraries & lead tracking',
+    icon: <BusinessCenterOutlined sx={{ fontSize: 20, color: '#F59E0B' }} />,
   },
   {
     id: 'service',
@@ -118,12 +98,7 @@ const ROLE_PRESETS: RolePreset[] = [
     name: 'Suresh Choudhary',
     email: 'suresh@crm.com',
     password: 'Password@123',
-    badge: 'SERVICE_ENG',
-    badgeColor: 'info',
-    themeColor: '#10B981',
-    icon: <Engineering sx={{ fontSize: 24 }} />,
-    branch: 'Mumbai HQ',
-    description: 'Field visit claims, machine demos, itemized fuel/toll mileage & bill uploads',
+    icon: <EngineeringOutlined sx={{ fontSize: 20, color: '#10B981' }} />,
   },
 ];
 
@@ -133,13 +108,15 @@ export const LoginPage: React.FC = () => {
   const [selectedRole, setSelectedRole] = useState<string>('admin');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isLockedOut, setIsLockedOut] = useState(false);
   const [msalLoading, setMsalLoading] = useState(false);
   const [isCheckingSso, setIsCheckingSso] = useState(true);
   const [detectedAccount, setDetectedAccount] = useState<AccountInfo | null>(null);
+
   const { login, loginWithMicrosoft, loading, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
-  // Helper to clear any stale MSAL interaction locks from browser storage
+  // Helper to clear stale MSAL interaction locks
   const clearMsalStorage = () => {
     try {
       for (let i = sessionStorage.length - 1; i >= 0; i--) {
@@ -151,6 +128,13 @@ export const LoginPage: React.FC = () => {
     } catch (e) {
       console.warn('Could not clear sessionStorage:', e);
     }
+  };
+
+  const extractErrorText = (err: any): string => {
+    if (typeof err === 'string') return err;
+    if (err?.response?.data?.message) return err.response.data.message;
+    if (err?.message) return err.message;
+    return 'Your account is inactive or authentication failed. Contact your administrator.';
   };
 
   const processMsalResponse = async (loginResponse: any) => {
@@ -165,8 +149,6 @@ export const LoginPage: React.FC = () => {
       const name = loginResponse.account?.name || (loginResponse.idTokenClaims as any)?.name;
       const oid = (loginResponse.idTokenClaims as any)?.oid || loginResponse.account?.localAccountId;
 
-      console.log('Authenticating with CRM backend for Microsoft account:', email, name);
-
       await loginWithMicrosoft({
         idToken: loginResponse.idToken,
         accessToken: loginResponse.accessToken,
@@ -175,26 +157,28 @@ export const LoginPage: React.FC = () => {
         azureAdOid: oid,
       });
 
-      sessionStorage.removeItem('auto_redirect_attempted');
       sessionStorage.removeItem('logged_out');
       navigate('/');
     } catch (err: any) {
       console.error('Failed to complete Microsoft login on backend:', err);
-      const errorMsg =
-        err?.response?.data?.message ||
-        err?.message ||
-        'Failed to authenticate Microsoft profile with CRM server.';
+      const errorMsg = extractErrorText(err);
       setError(errorMsg);
+      if (
+        errorMsg.toLowerCase().includes('inactive') ||
+        errorMsg.toLowerCase().includes('locked') ||
+        errorMsg.toLowerCase().includes('lockout')
+      ) {
+        setIsLockedOut(true);
+      }
     } finally {
       setMsalLoading(false);
     }
   };
 
-  // Initialize MSAL, handle redirects, and attempt automatic silent SSO
+  // Seamless SSO Auto-Detection on page load
   useEffect(() => {
     let isMounted = true;
 
-    // If user is already authenticated with CRM token, navigate immediately
     if (isAuthenticated) {
       navigate('/');
       return;
@@ -213,10 +197,6 @@ export const LoginPage: React.FC = () => {
           }
         } catch (redirErr: any) {
           console.warn('MSAL redirect promise note:', redirErr);
-          // Clean up stale or orphan URL hash if state was missing/already consumed
-          if (window.location.hash && window.location.hash.includes('code=')) {
-            window.history.replaceState({}, document.title, window.location.pathname);
-          }
         }
 
         // 2. Check for existing cached Microsoft accounts
@@ -225,17 +205,16 @@ export const LoginPage: React.FC = () => {
           setDetectedAccount(accounts[0]);
         }
 
-        // 3. If user explicitly clicked logout in this session, skip auto silent login
+        // 3. Skip silent login attempt if user explicitly logged out in this browser session
         const hasLoggedOut = sessionStorage.getItem('logged_out') === 'true';
         if (hasLoggedOut) {
           if (isMounted) setIsCheckingSso(false);
           return;
         }
 
-        // 4. If cached account is found, try acquireTokenSilent
+        // 4. Try silent token acquisition if cached account exists
         if (accounts.length > 0 && isMounted) {
           try {
-            console.log('Attempting silent token acquisition for cached account:', accounts[0].username);
             const silentResponse = await msalInstance.acquireTokenSilent({
               ...loginRequest,
               account: accounts[0],
@@ -249,28 +228,15 @@ export const LoginPage: React.FC = () => {
           }
         }
 
-        // 5. Try silent browser SSO via hidden iframe
+        // 5. Try silent browser session detection via iframe (ssoSilent)
         try {
-          console.log('Attempting silent SSO with Microsoft Entra ID...');
           const ssoResponse = await msalInstance.ssoSilent(loginRequest);
           if (ssoResponse && isMounted) {
             await processMsalResponse(ssoResponse);
             return;
           }
         } catch (ssoErr) {
-          console.log('Browser silent iframe SSO not available, attempting seamless direct SSO redirect...');
-        }
-
-        // 6. Automatic seamless direct SSO redirect if not previously attempted in this session
-        const autoRedirectAttempted = sessionStorage.getItem('auto_redirect_attempted') === 'true';
-        if (!autoRedirectAttempted && isMounted) {
-          sessionStorage.setItem('auto_redirect_attempted', 'true');
-          console.log('Initiating automatic zero-click Microsoft SSO redirect...');
-          await msalInstance.loginRedirect({
-            ...loginRequest,
-            redirectUri: getCurrentRedirectUri(),
-          });
-          return;
+          // No active Microsoft session in browser
         }
       } catch (err: any) {
         console.warn('MSAL initialization/SSO error:', err);
@@ -288,32 +254,30 @@ export const LoginPage: React.FC = () => {
     };
   }, [isAuthenticated]);
 
-  const handleSelectRole = (preset: RolePreset) => {
-    setSelectedRole(preset.id);
-    setUsername(preset.email);
-    setPassword(preset.password);
-    setError(null);
-  };
-
-  const handleInstantLogin = async (preset: RolePreset) => {
-    handleSelectRole(preset);
-    setError(null);
-    try {
-      await login(preset.email, preset.password);
-      navigate('/');
-    } catch (err: any) {
-      setError(err?.response?.data?.message || err?.message || 'Failed to authenticate. Please check your credentials.');
+  const handleRoleChange = (event: SelectChangeEvent<string>) => {
+    const roleId = event.target.value;
+    setSelectedRole(roleId);
+    const preset = ROLE_PRESETS.find((r) => r.id === roleId);
+    if (preset) {
+      setUsername(preset.email);
+      setPassword(preset.password);
     }
+    setError(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setIsLockedOut(false);
     try {
       await login(username, password);
       navigate('/');
     } catch (err: any) {
-      setError(err?.response?.data?.message || err?.message || 'Failed to authenticate. Please check your credentials.');
+      const msg = extractErrorText(err);
+      setError(msg);
+      if (msg.toLowerCase().includes('locked') || msg.toLowerCase().includes('lockout')) {
+        setIsLockedOut(true);
+      }
     }
   };
 
@@ -324,7 +288,6 @@ export const LoginPage: React.FC = () => {
     try {
       await msalInstance.initialize();
 
-      // If an account is already detected and we're not forcing the picker, try silent token acquisition first
       if (detectedAccount && !forceAccountPicker) {
         try {
           const silentRes = await msalInstance.acquireTokenSilent({
@@ -336,7 +299,7 @@ export const LoginPage: React.FC = () => {
             return;
           }
         } catch (silentErr) {
-          console.warn('Silent token acquire failed, proceeding to popup:', silentErr);
+          console.warn('Silent token acquire fallback to popup:', silentErr);
         }
       }
 
@@ -351,7 +314,6 @@ export const LoginPage: React.FC = () => {
       try {
         loginResponse = await msalInstance.loginPopup(requestConfig);
       } catch (popupErr: any) {
-        console.warn('Popup login error, handling fallback:', popupErr);
         if (popupErr?.errorCode === 'user_cancelled') {
           setError('Microsoft sign-in was cancelled.');
           return;
@@ -364,7 +326,6 @@ export const LoginPage: React.FC = () => {
           await msalInstance.initialize();
           loginResponse = await msalInstance.loginPopup(requestConfig);
         } else {
-          // Fallback to full-page redirect flow
           await msalInstance.loginRedirect(requestConfig);
           return;
         }
@@ -378,11 +339,15 @@ export const LoginPage: React.FC = () => {
       if (err?.errorCode === 'user_cancelled') {
         setError('Microsoft sign-in was cancelled.');
       } else {
-        const errorMsg =
-          err?.response?.data?.message ||
-          err?.message ||
-          'Failed to sign in with Microsoft Entra ID. Please verify your employee registration.';
+        const errorMsg = extractErrorText(err);
         setError(errorMsg);
+        if (
+          errorMsg.toLowerCase().includes('inactive') ||
+          errorMsg.toLowerCase().includes('locked') ||
+          errorMsg.toLowerCase().includes('lockout')
+        ) {
+          setIsLockedOut(true);
+        }
       }
     } finally {
       setMsalLoading(false);
@@ -395,508 +360,393 @@ export const LoginPage: React.FC = () => {
     <Box
       sx={{
         minHeight: '100vh',
+        width: '100vw',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'linear-gradient(135deg, #0F172A 0%, #1E1B4B 50%, #0F172A 100%)',
-        p: { xs: 2, sm: 3, md: 4 },
         position: 'relative',
-        overflow: 'hidden',
+        p: { xs: 2, sm: 3 },
+        backgroundImage: `linear-gradient(135deg, rgba(15, 23, 42, 0.85) 0%, rgba(30, 27, 75, 0.80) 50%, rgba(15, 23, 42, 0.90) 100%), url('https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=2000&q=80')`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+        backgroundAttachment: 'fixed',
       }}
     >
-      {/* Background Subtle Ambient Glow */}
-      <Box
+      {/* Centered Modern Card */}
+      <Card
         sx={{
-          position: 'absolute',
-          top: -120,
-          left: -120,
-          width: 450,
-          height: 450,
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(79, 70, 229, 0.25) 0%, rgba(0,0,0,0) 70%)',
-          filter: 'blur(40px)',
-          pointerEvents: 'none',
+          width: '100%',
+          maxWidth: 460,
+          borderRadius: 4,
+          bgcolor: 'rgba(255, 255, 255, 0.96)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          border: '1px solid rgba(255, 255, 255, 0.6)',
+          boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.45)',
+          position: 'relative',
+          zIndex: 2,
+          overflow: 'hidden',
         }}
-      />
-      <Box
-        sx={{
-          position: 'absolute',
-          bottom: -100,
-          right: -100,
-          width: 400,
-          height: 400,
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(14, 165, 233, 0.2) 0%, rgba(0,0,0,0) 70%)',
-          filter: 'blur(40px)',
-          pointerEvents: 'none',
-        }}
-      />
-
-      <Container maxWidth="lg" sx={{ position: 'relative', zIndex: 1 }}>
-        <Grid container spacing={{ xs: 3, md: 4 }} alignItems="center" justifyContent="center">
-          {/* Left Column: Role Selector Hub */}
-          <Grid item xs={12} md={7}>
-            <Box sx={{ mb: 3 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
-                <Avatar
-                  sx={{
-                    bgcolor: 'primary.main',
-                    width: 44,
-                    height: 44,
-                    fontWeight: 800,
-                    fontSize: '1.1rem',
-                    background: 'linear-gradient(135deg, #4F46E5 0%, #06B6D4 100%)',
-                    boxShadow: '0 4px 20px rgba(79, 70, 229, 0.5)',
-                  }}
-                >
-                  FV
-                </Avatar>
-                <Typography
-                  variant="h4"
-                  sx={{
-                    fontWeight: 800,
-                    color: '#FFFFFF',
-                    letterSpacing: '-0.02em',
-                    fontSize: { xs: '1.4rem', sm: '1.8rem' },
-                  }}
-                >
-                  Field Visit & Expense CRM
-                </Typography>
-              </Box>
-
-              <Typography variant="body1" sx={{ color: '#94A3B8', mb: 2 }}>
-                Enterprise platform powered by <b>Java Spring Boot 3</b> and <b>Microsoft SQL Server</b>.
-              </Typography>
-
-              {/* Status Chips */}
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 3 }}>
-                <Chip
-                  icon={<Storage sx={{ fontSize: '14px !important', color: '#38BDF8 !important' }} />}
-                  label="MS SQL Server (field_visit)"
-                  size="small"
-                  sx={{
-                    bgcolor: 'rgba(56, 189, 248, 0.1)',
-                    color: '#38BDF8',
-                    border: '1px solid rgba(56, 189, 248, 0.25)',
-                    fontWeight: 600,
-                  }}
-                />
-                <Chip
-                  icon={<VpnKey sx={{ fontSize: '14px !important', color: '#38BDF8 !important' }} />}
-                  label="Microsoft Entra ID (fieldvisit)"
-                  size="small"
-                  sx={{
-                    bgcolor: 'rgba(0, 164, 239, 0.15)',
-                    color: '#38BDF8',
-                    border: '1px solid rgba(0, 164, 239, 0.35)',
-                    fontWeight: 600,
-                  }}
-                />
-                <Chip
-                  label="Spring Boot 3.3 (Java 21)"
-                  size="small"
-                  sx={{
-                    bgcolor: 'rgba(74, 222, 128, 0.1)',
-                    color: '#4ADE80',
-                    border: '1px solid rgba(74, 222, 128, 0.25)',
-                    fontWeight: 600,
-                  }}
-                />
-              </Box>
-
-              <Typography
-                variant="subtitle2"
-                sx={{
-                  color: '#E2E8F0',
-                  fontWeight: 700,
-                  mb: 1.5,
-                  letterSpacing: '0.04em',
-                  textTransform: 'uppercase',
-                  fontSize: '0.75rem',
-                }}
-              >
-                ⚡ Quick Select Role to Sign In (All 4 Enterprise Roles):
-              </Typography>
-
-              {/* Role Cards Grid */}
-              <Grid container spacing={1.5}>
-                {ROLE_PRESETS.map((preset) => {
-                  const isSelected = selectedRole === preset.id;
-                  return (
-                    <Grid item xs={12} sm={6} key={preset.id}>
-                      <Paper
-                        elevation={0}
-                        onClick={() => handleSelectRole(preset)}
-                        sx={{
-                          p: 2,
-                          borderRadius: 3,
-                          cursor: 'pointer',
-                          bgcolor: isSelected ? 'rgba(79, 70, 229, 0.16)' : 'rgba(30, 41, 59, 0.7)',
-                          backdropFilter: 'blur(12px)',
-                          border: isSelected ? `2px solid ${preset.themeColor}` : '1px solid rgba(255, 255, 255, 0.1)',
-                          boxShadow: isSelected ? `0 8px 24px -4px ${preset.themeColor}55` : 'none',
-                          transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: 1,
-                          position: 'relative',
-                          '&:hover': {
-                            bgcolor: isSelected ? 'rgba(79, 70, 229, 0.22)' : 'rgba(51, 65, 85, 0.8)',
-                            borderColor: preset.themeColor,
-                            transform: 'translateY(-2px)',
-                          },
-                        }}
-                      >
-                        {/* Header Row */}
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
-                            <Box
-                              sx={{
-                                width: 36,
-                                height: 36,
-                                borderRadius: '10px',
-                                bgcolor: `${preset.themeColor}22`,
-                                color: preset.themeColor,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                              }}
-                            >
-                              {preset.icon}
-                            </Box>
-                            <Box>
-                              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#FFFFFF', lineHeight: 1.2 }}>
-                                {preset.title}
-                              </Typography>
-                              <Typography variant="caption" sx={{ color: '#94A3B8', fontSize: '0.72rem' }}>
-                                {preset.name}
-                              </Typography>
-                            </Box>
-                          </Box>
-
-                          {isSelected && <CheckCircle sx={{ color: preset.themeColor, fontSize: 20 }} />}
-                        </Box>
-
-                        <Typography variant="caption" sx={{ color: '#CBD5E1', fontSize: '0.74rem', lineHeight: 1.4 }}>
-                          {preset.description}
-                        </Typography>
-
-                        <Divider sx={{ borderColor: 'rgba(255, 255, 255, 0.08)' }} />
-
-                        {/* Card Footer: Email & 1-Click Login */}
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 0.2 }}>
-                          <Typography
-                            variant="caption"
-                            sx={{ color: '#94A3B8', fontFamily: 'monospace', fontSize: '0.72rem' }}
-                          >
-                            {preset.email}
-                          </Typography>
-                          <Button
-                            size="small"
-                            variant="text"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleInstantLogin(preset);
-                            }}
-                            endIcon={<ArrowForward sx={{ fontSize: '14px !important' }} />}
-                            sx={{
-                              p: '2px 8px',
-                              fontSize: '0.7rem',
-                              fontWeight: 700,
-                              color: preset.themeColor,
-                              borderRadius: 1.5,
-                              '&:hover': { bgcolor: `${preset.themeColor}22` },
-                            }}
-                          >
-                            Sign In
-                          </Button>
-                        </Box>
-                      </Paper>
-                    </Grid>
-                  );
-                })}
-              </Grid>
-            </Box>
-          </Grid>
-
-          {/* Right Column: Sign In Form Card */}
-          <Grid item xs={12} md={5}>
-            <Card
+      >
+        <CardContent sx={{ p: { xs: 3, sm: 4 } }}>
+          {/* Header & Brand Logo */}
+          <Box sx={{ textAlign: 'center', mb: 3 }}>
+            <Box
               sx={{
-                p: { xs: 2.5, sm: 3 },
-                borderRadius: 4,
-                bgcolor: '#FFFFFF',
-                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-                border: '1px solid rgba(226, 232, 240, 0.9)',
+                width: 52,
+                height: 52,
+                borderRadius: '14px',
+                background: 'linear-gradient(135deg, #4F46E5 0%, #06B6D4 100%)',
+                color: '#FFFFFF',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 800,
+                fontSize: '1.25rem',
+                boxShadow: '0 8px 20px -4px rgba(79, 70, 229, 0.45)',
+                mb: 1.5,
               }}
             >
-              <CardContent sx={{ p: 1 }}>
-                <Box sx={{ mb: 2 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                    <Typography variant="h5" sx={{ fontWeight: 800, color: '#0F172A' }}>
-                      Sign In
-                    </Typography>
-                    <Chip
-                      label={ROLE_PRESETS.find((r) => r.id === selectedRole)?.badge || 'ADMIN'}
-                      color={ROLE_PRESETS.find((r) => r.id === selectedRole)?.badgeColor || 'primary'}
-                      size="small"
-                      sx={{ fontWeight: 800, fontSize: '0.7rem' }}
-                    />
-                  </Box>
-                  <Typography variant="body2" color="text.secondary">
-                    Selected role: <b>{ROLE_PRESETS.find((r) => r.id === selectedRole)?.title}</b>
-                  </Typography>
-                </Box>
+              FV
+            </Box>
+            <Typography
+              variant="h5"
+              sx={{
+                fontWeight: 800,
+                color: '#0F172A',
+                letterSpacing: '-0.025em',
+                fontSize: { xs: '1.35rem', sm: '1.5rem' },
+                lineHeight: 1.25,
+              }}
+            >
+              Field Visit & Expense CRM
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#64748B', mt: 0.6, fontSize: '0.82rem' }}>
+              Enterprise portal for on-site field visits & claim management
+            </Typography>
+          </Box>
 
-                {error && (
-                  <Alert severity="error" sx={{ mb: 2.5, borderRadius: 2 }}>
-                    {error}
-                  </Alert>
-                )}
+          {/* Progressive Lockout / Error Alert */}
+          {error && (
+            <Alert
+              severity={isLockedOut ? 'error' : 'warning'}
+              icon={isLockedOut ? <WarningAmberOutlined /> : undefined}
+              sx={{
+                mb: 2.5,
+                borderRadius: 2,
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                lineHeight: 1.4,
+              }}
+            >
+              {error}
+            </Alert>
+          )}
 
-                {/* Microsoft Entra ID Single Sign-On / Detected Account */}
-                {detectedAccount ? (
-                  <Paper
-                    elevation={0}
-                    sx={{
-                      p: 2,
-                      mb: 2.5,
-                      borderRadius: 2.5,
-                      bgcolor: 'rgba(0, 164, 239, 0.07)',
-                      border: '1px solid rgba(0, 164, 239, 0.35)',
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
-                      <Avatar
-                        sx={{
-                          bgcolor: '#00A4EF',
-                          color: '#FFFFFF',
-                          fontWeight: 800,
-                          fontSize: '1rem',
-                          width: 40,
-                          height: 40,
-                          boxShadow: '0 2px 8px rgba(0, 164, 239, 0.4)',
-                        }}
-                      >
-                        {(detectedAccount.name || detectedAccount.username || 'M').charAt(0).toUpperCase()}
-                      </Avatar>
-                      <Box sx={{ flex: 1, minWidth: 0 }}>
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            color: '#0284C7',
-                            fontWeight: 700,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.04em',
-                            fontSize: '0.68rem',
-                            display: 'block',
-                          }}
-                        >
-                          Detected Microsoft Session
+          {/* Quick Login Role Selector Dropdown */}
+          <Box sx={{ mb: 2.5 }}>
+            <FormControl fullWidth size="small">
+              <InputLabel id="quick-login-label" sx={{ fontSize: '0.85rem', fontWeight: 600 }}>
+                ⚡ Quick Login (Demo / Switch Role)
+              </InputLabel>
+              <Select
+                labelId="quick-login-label"
+                id="quick-login-select"
+                value={selectedRole}
+                label="⚡ Quick Login (Demo / Switch Role)"
+                onChange={handleRoleChange}
+                disabled={isAnyLoading}
+                sx={{
+                  borderRadius: 2,
+                  bgcolor: '#F8FAFC',
+                  fontSize: '0.875rem',
+                  '& .MuiSelect-select': {
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    py: 1,
+                  },
+                }}
+              >
+                {ROLE_PRESETS.map((preset) => (
+                  <MenuItem key={preset.id} value={preset.id} sx={{ py: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, width: '100%' }}>
+                      {preset.icon}
+                      <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                        <Typography variant="body2" sx={{ fontWeight: 700, color: '#1E293B', lineHeight: 1.2 }}>
+                          {preset.title}
                         </Typography>
-                        <Typography
-                          variant="subtitle2"
-                          sx={{
-                            fontWeight: 700,
-                            color: '#0F172A',
-                            lineHeight: 1.2,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {detectedAccount.name || detectedAccount.username}
-                        </Typography>
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            color: '#64748B',
-                            display: 'block',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            fontSize: '0.73rem',
-                          }}
-                        >
-                          {detectedAccount.username}
+                        <Typography variant="caption" sx={{ color: '#64748B', fontSize: '0.72rem' }}>
+                          {preset.name} ({preset.email})
                         </Typography>
                       </Box>
                     </Box>
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
 
-                    <Button
-                      fullWidth
-                      variant="contained"
-                      size="medium"
-                      disabled={isAnyLoading}
-                      onClick={() => handleMicrosoftLogin(false)}
-                      startIcon={
-                        msalLoading ? (
-                          <CircularProgress size={18} color="inherit" />
-                        ) : (
-                          <MicrosoftIcon size={18} />
-                        )
-                      }
-                      sx={{
-                        py: 1,
-                        fontWeight: 700,
-                        fontSize: '0.88rem',
-                        background: 'linear-gradient(135deg, #0078D4 0%, #00A4EF 100%)',
-                        color: '#FFFFFF',
-                        borderRadius: 2,
-                        boxShadow: '0 4px 12px rgba(0, 120, 212, 0.35)',
-                        '&:hover': {
-                          background: 'linear-gradient(135deg, #005A9E 0%, #0078D4 100%)',
-                        },
-                      }}
-                    >
-                      {msalLoading
-                        ? 'Signing in...'
-                        : `Continue as ${
-                            detectedAccount.name?.split(' ')[0] || detectedAccount.username
-                          }`}
-                    </Button>
+          {/* Microsoft Entra ID SSO Section */}
+          {detectedAccount ? (
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2,
+                mb: 2.5,
+                borderRadius: 2.5,
+                bgcolor: 'rgba(0, 164, 239, 0.06)',
+                border: '1px solid rgba(0, 164, 239, 0.28)',
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+                <Avatar
+                  sx={{
+                    bgcolor: '#0078D4',
+                    color: '#FFFFFF',
+                    fontWeight: 700,
+                    fontSize: '0.95rem',
+                    width: 38,
+                    height: 38,
+                    boxShadow: '0 2px 8px rgba(0, 120, 212, 0.3)',
+                  }}
+                >
+                  {(detectedAccount.name || detectedAccount.username || 'M').charAt(0).toUpperCase()}
+                </Avatar>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: '#0284C7',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                      fontSize: '0.68rem',
+                      display: 'block',
+                    }}
+                  >
+                    Detected Microsoft Session
+                  </Typography>
+                  <Typography
+                    variant="subtitle2"
+                    sx={{
+                      fontWeight: 700,
+                      color: '#0F172A',
+                      lineHeight: 1.2,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {detectedAccount.name || detectedAccount.username}
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: '#64748B',
+                      display: 'block',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      fontSize: '0.73rem',
+                    }}
+                  >
+                    {detectedAccount.username}
+                  </Typography>
+                </Box>
+              </Box>
 
-                    <Button
-                      fullWidth
-                      variant="text"
+              <Button
+                fullWidth
+                variant="contained"
+                size="medium"
+                disabled={isAnyLoading}
+                onClick={() => handleMicrosoftLogin(false)}
+                startIcon={
+                  msalLoading ? (
+                    <CircularProgress size={18} color="inherit" />
+                  ) : (
+                    <MicrosoftIcon size={18} />
+                  )
+                }
+                sx={{
+                  py: 1,
+                  fontWeight: 700,
+                  fontSize: '0.88rem',
+                  background: 'linear-gradient(135deg, #0078D4 0%, #00A4EF 100%)',
+                  color: '#FFFFFF',
+                  borderRadius: 2,
+                  boxShadow: '0 4px 12px rgba(0, 120, 212, 0.3)',
+                  '&:hover': {
+                    background: 'linear-gradient(135deg, #005A9E 0%, #0078D4 100%)',
+                  },
+                }}
+              >
+                {msalLoading
+                  ? 'Signing in...'
+                  : `Continue as ${
+                      detectedAccount.name?.split(' ')[0] || detectedAccount.username
+                    }`}
+              </Button>
+
+              <Button
+                fullWidth
+                variant="text"
+                size="small"
+                disabled={isAnyLoading}
+                onClick={() => handleMicrosoftLogin(true)}
+                sx={{
+                  mt: 0.8,
+                  fontSize: '0.73rem',
+                  fontWeight: 600,
+                  color: '#64748B',
+                  textTransform: 'none',
+                  '&:hover': { color: '#0284C7', bgcolor: 'transparent' },
+                }}
+              >
+                Use Another Microsoft Account / Switch
+              </Button>
+            </Paper>
+          ) : (
+            <Button
+              fullWidth
+              variant="outlined"
+              size="large"
+              disabled={isAnyLoading}
+              onClick={() => handleMicrosoftLogin(true)}
+              sx={{
+                py: 1.2,
+                mb: 2.5,
+                fontWeight: 600,
+                fontSize: '0.9rem',
+                color: '#1E293B',
+                borderColor: '#CBD5E1',
+                bgcolor: '#FFFFFF',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 2,
+                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+                transition: 'all 0.2s ease-in-out',
+                '&:hover': {
+                  bgcolor: '#F8FAFC',
+                  borderColor: '#94A3B8',
+                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+                },
+              }}
+            >
+              {isCheckingSso ? (
+                <CircularProgress size={18} sx={{ mr: 1.5, color: '#00A4EF' }} />
+              ) : msalLoading ? (
+                <CircularProgress size={18} sx={{ mr: 1.5, color: '#00A4EF' }} />
+              ) : (
+                <MicrosoftIcon size={18} />
+              )}
+              <Box component="span">
+                {isCheckingSso
+                  ? 'Detecting active Microsoft session...'
+                  : msalLoading
+                  ? 'Authenticating with Microsoft Entra ID...'
+                  : 'Sign in with Microsoft Entra ID'}
+              </Box>
+            </Button>
+          )}
+
+          {/* Divider */}
+          <Divider sx={{ mb: 2.5, fontSize: '0.72rem', color: '#94A3B8', fontWeight: 600, letterSpacing: '0.04em' }}>
+            OR SIGN IN WITH CREDENTIALS
+          </Divider>
+
+          {/* Credential Login Form */}
+          <form onSubmit={handleSubmit}>
+            <TextField
+              fullWidth
+              label="Email or Employee Number"
+              variant="outlined"
+              size="medium"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+              disabled={isAnyLoading}
+              sx={{ mb: 2 }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <EmailOutlined sx={{ color: '#94A3B8', fontSize: 20 }} />
+                  </InputAdornment>
+                ),
+              }}
+            />
+
+            <TextField
+              fullWidth
+              label="Password"
+              type={showPassword ? 'text' : 'password'}
+              variant="outlined"
+              size="medium"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              disabled={isAnyLoading}
+              sx={{ mb: 3 }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <LockOutlined sx={{ color: '#94A3B8', fontSize: 20 }} />
+                  </InputAdornment>
+                ),
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={() => setShowPassword(!showPassword)}
+                      edge="end"
                       size="small"
                       disabled={isAnyLoading}
-                      onClick={() => handleMicrosoftLogin(true)}
-                      sx={{
-                        mt: 0.8,
-                        fontSize: '0.73rem',
-                        fontWeight: 600,
-                        color: '#64748B',
-                        textTransform: 'none',
-                        '&:hover': { color: '#0284C7', bgcolor: 'transparent' },
-                      }}
                     >
-                      Switch / Use another Microsoft account
-                    </Button>
-                  </Paper>
-                ) : (
-                  <Button
-                    fullWidth
-                    variant="outlined"
-                    size="large"
-                    disabled={isAnyLoading}
-                    onClick={() => handleMicrosoftLogin(true)}
-                    sx={{
-                      py: 1.3,
-                      mb: 2.5,
-                      fontWeight: 700,
-                      fontSize: '0.92rem',
-                      color: '#2F2F2F',
-                      borderColor: '#D1D5DB',
-                      bgcolor: '#F9FAFB',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      borderRadius: 2.5,
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                      transition: 'all 0.2s ease-in-out',
-                      '&:hover': {
-                        bgcolor: '#F3F4F6',
-                        borderColor: '#9CA3AF',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
-                      },
-                    }}
-                  >
-                    {isCheckingSso ? (
-                      <CircularProgress size={20} sx={{ mr: 1.5, color: '#00A4EF' }} />
-                    ) : msalLoading ? (
-                      <CircularProgress size={20} sx={{ mr: 1.5, color: '#00A4EF' }} />
-                    ) : (
-                      <MicrosoftIcon size={20} />
-                    )}
-                    <Box component="span" sx={{ fontWeight: 600 }}>
-                      {isCheckingSso
-                        ? 'Detecting active Microsoft session...'
-                        : msalLoading
-                        ? 'Signing in with Entra ID...'
-                        : 'Sign in with Microsoft Entra ID'}
-                    </Box>
-                  </Button>
-                )}
+                      {showPassword ? (
+                        <VisibilityOff sx={{ fontSize: 19, color: '#94A3B8' }} />
+                      ) : (
+                        <Visibility sx={{ fontSize: 19, color: '#94A3B8' }} />
+                      )}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
 
-                {/* Divider */}
-                <Divider sx={{ mb: 2.5, fontSize: '0.75rem', color: '#94A3B8', fontWeight: 600 }}>
-                  OR SIGN IN WITH CREDENTIALS
-                </Divider>
+            <Button
+              fullWidth
+              type="submit"
+              variant="contained"
+              size="large"
+              disabled={isAnyLoading}
+              sx={{
+                py: 1.3,
+                fontWeight: 700,
+                fontSize: '0.92rem',
+                borderRadius: 2,
+                background: 'linear-gradient(135deg, #4F46E5 0%, #3B82F6 100%)',
+                boxShadow: '0 8px 20px -4px rgba(79, 70, 229, 0.4)',
+                '&:hover': {
+                  background: 'linear-gradient(135deg, #4338CA 0%, #2563EB 100%)',
+                  boxShadow: '0 12px 25px -4px rgba(79, 70, 229, 0.5)',
+                },
+              }}
+            >
+              {loading ? <CircularProgress size={22} color="inherit" /> : 'Sign In'}
+            </Button>
+          </form>
 
-                <form onSubmit={handleSubmit}>
-                  <TextField
-                    fullWidth
-                    label="Email or Employee Number"
-                    variant="outlined"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    required
-                    sx={{ mb: 2 }}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <Person color="action" />
-                        </InputAdornment>
-                      ),
-                    }}
-                  />
-
-                  <TextField
-                    fullWidth
-                    label="Password"
-                    type={showPassword ? 'text' : 'password'}
-                    variant="outlined"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    sx={{ mb: 3 }}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <Lock color="action" />
-                        </InputAdornment>
-                      ),
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <IconButton onClick={() => setShowPassword(!showPassword)} edge="end" size="small">
-                            {showPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-                          </IconButton>
-                        </InputAdornment>
-                      ),
-                    }}
-                  />
-
-                  <Button
-                    fullWidth
-                    type="submit"
-                    variant="contained"
-                    size="large"
-                    disabled={isAnyLoading}
-                    sx={{
-                      py: 1.5,
-                      fontWeight: 700,
-                      fontSize: '0.95rem',
-                      background: 'linear-gradient(135deg, #4F46E5 0%, #3B82F6 100%)',
-                      boxShadow: '0 8px 20px -4px rgba(79, 70, 229, 0.45)',
-                      '&:hover': {
-                        background: 'linear-gradient(135deg, #4338CA 0%, #2563EB 100%)',
-                        boxShadow: '0 12px 25px -4px rgba(79, 70, 229, 0.55)',
-                      },
-                    }}
-                  >
-                    {loading ? (
-                      <CircularProgress size={24} color="inherit" />
-                    ) : (
-                      `SIGN IN AS ${ROLE_PRESETS.find((r) => r.id === selectedRole)?.badge || 'USER'}`
-                    )}
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
-      </Container>
+          {/* Secure Footer Note */}
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.8, mt: 3 }}>
+            <ShieldOutlined sx={{ fontSize: 15, color: '#94A3B8' }} />
+            <Typography variant="caption" sx={{ color: '#94A3B8', fontSize: '0.72rem', fontWeight: 500 }}>
+              Enterprise SSO & Progressive Attack Defense Shield
+            </Typography>
+          </Box>
+        </CardContent>
+      </Card>
     </Box>
   );
 };

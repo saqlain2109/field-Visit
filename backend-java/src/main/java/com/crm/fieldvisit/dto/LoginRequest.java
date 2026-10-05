@@ -23,6 +23,10 @@ public class LoginRequest {
     @NotBlank(message = "Password is required")
     private String password;
 
+    private String deviceFingerprint;
+
+    private String browserProfileId;
+
     public String getIdentifier() {
         if (username != null && !username.isBlank()) {
             return username.trim();

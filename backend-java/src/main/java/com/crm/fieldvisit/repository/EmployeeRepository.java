@@ -18,7 +18,7 @@ public interface EmployeeRepository extends JpaRepository<Employee, Integer> {
 
     Optional<Employee> findByAzureAdOid(String azureAdOid);
 
-    @Query("SELECT e FROM Employee e WHERE e.email = :username OR e.employeeNo = :username")
+    @Query("SELECT e FROM Employee e WHERE LOWER(TRIM(e.email)) = LOWER(TRIM(:username)) OR LOWER(TRIM(e.employeeNo)) = LOWER(TRIM(:username))")
     Optional<Employee> findByEmailOrEmployeeNo(@Param("username") String username);
 
     @Query("SELECT e FROM Employee e WHERE " +
@@ -30,4 +30,12 @@ public interface EmployeeRepository extends JpaRepository<Employee, Integer> {
                                       @Param("departmentId") Integer departmentId,
                                       @Param("designationId") Integer designationId,
                                       @Param("search") String search);
+
+    long countByStatusIgnoreCase(String status);
+
+    @Query("SELECT e FROM Employee e WHERE e.isLocked = true OR e.lockoutTier >= 1")
+    List<Employee> findLockedEmployees();
+
+    @Query("SELECT COUNT(e) FROM Employee e WHERE e.isLocked = true OR e.lockoutTier >= 1")
+    long countLockedOrRestricted();
 }

@@ -13,6 +13,8 @@ public class LoginResponse {
 
     private String token;
     private String accessToken;
+    private String sessionId;
+    private Boolean autoProvisioned;
     private UserDto user;
 
     @Data
@@ -37,5 +39,6 @@ public class LoginResponse {
         private Integer designationId;
         private String designation;
         private String designationTitle;
+        private Boolean isPasswordSet;
     }
 }

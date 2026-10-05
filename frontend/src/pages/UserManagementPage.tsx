@@ -37,6 +37,7 @@ import {
   Close as CloseIcon,
 } from '@mui/icons-material';
 import api from '../services/api';
+import { useNavigate } from 'react-router-dom';
 import { exportToCsv } from '../utils/exportCsv';
 
 interface TabPanelProps {
@@ -152,6 +153,8 @@ export const UserManagementPage: React.FC = () => {
     { module: 'User Security & Access Control', admin: true, manager: false, sales: false, service: false },
   ];
 
+  const navigate = useNavigate();
+
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
@@ -163,9 +166,20 @@ export const UserManagementPage: React.FC = () => {
             Manage system login accounts, security roles, branch scopes, and module access permissions
           </Typography>
         </Box>
-        <Button variant="outlined" startIcon={<DownloadIcon />} onClick={handleExportCsv}>
-          Export Users CSV
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1.5 }}>
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<SecurityIcon />}
+            onClick={() => navigate('/login-logs')}
+            sx={{ fontWeight: 700 }}
+          >
+            View Login Logs & Security Audit
+          </Button>
+          <Button variant="outlined" startIcon={<DownloadIcon />} onClick={handleExportCsv}>
+            Export Users CSV
+          </Button>
+        </Box>
       </Box>
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}

@@ -1,6 +1,5 @@
 package com.crm.fieldvisit.dto;
 
-import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -41,4 +40,14 @@ public class MicrosoftLoginRequest {
      * Tenant ID
      */
     private String tenantId;
+
+    /**
+     * Client-generated hardware / browser fingerprint
+     */
+    private String deviceFingerprint;
+
+    /**
+     * Client browser profile ID
+     */
+    private String browserProfileId;
 }
