@@ -617,6 +617,7 @@ export const LoginLogsPage: React.FC = () => {
                 >
                   <MenuItem value="ALL">All Methods</MenuItem>
                   <MenuItem value="Microsoft SSO">Microsoft SSO</MenuItem>
+                  <MenuItem value="Google SSO">Google SSO</MenuItem>
                   <MenuItem value="Credential">Internal Credential</MenuItem>
                 </TextField>
 
@@ -779,8 +780,8 @@ export const LoginLogsPage: React.FC = () => {
                               <Chip
                                 label={log.loginMethod}
                                 size="small"
-                                color={log.loginMethod === 'Microsoft SSO' ? 'info' : 'primary'}
-                                variant={log.loginMethod === 'Microsoft SSO' ? 'filled' : 'outlined'}
+                                color={log.loginMethod === 'Microsoft SSO' ? 'info' : log.loginMethod === 'Google SSO' ? 'success' : 'primary'}
+                                variant={log.loginMethod?.includes('SSO') ? 'filled' : 'outlined'}
                                 sx={{ fontWeight: 700, height: 22, fontSize: '0.72rem' }}
                               />
                             </TableCell>
@@ -807,6 +808,11 @@ export const LoginLogsPage: React.FC = () => {
                               <Typography variant="body2" sx={{ fontWeight: 600, color: '#0284C7', fontSize: '0.82rem' }}>
                                 {log.ipAddress}
                               </Typography>
+                              {log.country && (
+                                <Typography variant="caption" sx={{ color: '#475569', display: 'block', fontWeight: 600, fontSize: '0.72rem' }}>
+                                  📍 {log.country}
+                                </Typography>
+                              )}
                             </TableCell>
                             <TableCell>
                               <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.82rem' }}>

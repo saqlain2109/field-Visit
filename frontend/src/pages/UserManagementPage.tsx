@@ -25,6 +25,7 @@ import {
   Tooltip,
   Switch,
   FormControlLabel,
+  Divider,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -73,6 +74,12 @@ export const UserManagementPage: React.FC = () => {
     role: 'SERVICE_ENG',
     status: 'Active',
     branchId: 1,
+    is2faEnabled: true,
+    isRegionRestricted: false,
+    allowedRegions: 'IN',
+    allowedLatitude: '' as number | string,
+    allowedLongitude: '' as number | string,
+    allowedRadiusKm: 25 as number | string,
   });
 
   const fetchUsers = async () => {
@@ -104,14 +111,45 @@ export const UserManagementPage: React.FC = () => {
       role: u.role || 'SERVICE_ENG',
       status: u.status || 'Active',
       branchId: u.branchId || 1,
+      is2faEnabled: u.is2faEnabled !== false,
+      isRegionRestricted: Boolean(u.isRegionRestricted),
+      allowedRegions: u.allowedRegions || 'IN',
+      allowedLatitude: u.allowedLatitude != null ? u.allowedLatitude : '',
+      allowedLongitude: u.allowedLongitude != null ? u.allowedLongitude : '',
+      allowedRadiusKm: u.allowedRadiusKm != null ? u.allowedRadiusKm : 25,
     });
     setOpenModal(true);
+  };
+
+  const handleGetCurrentLocation = () => {
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setFormData((prev) => ({
+            ...prev,
+            allowedLatitude: Number(pos.coords.latitude.toFixed(6)),
+            allowedLongitude: Number(pos.coords.longitude.toFixed(6)),
+          }));
+        },
+        (err) => {
+          alert('Could not retrieve current GPS position: ' + err.message);
+        }
+      );
+    } else {
+      alert('Geolocation is not supported by your browser.');
+    }
   };
 
   const handleSaveUserRole = async () => {
     if (!editingUser) return;
     try {
-      await api.put(`/employees/${editingUser.id}`, formData);
+      const payload = {
+        ...formData,
+        allowedLatitude: formData.allowedLatitude !== '' ? Number(formData.allowedLatitude) : null,
+        allowedLongitude: formData.allowedLongitude !== '' ? Number(formData.allowedLongitude) : null,
+        allowedRadiusKm: formData.allowedRadiusKm !== '' ? Number(formData.allowedRadiusKm) : 25,
+      };
+      await api.put(`/employees/${editingUser.id}`, payload);
       setOpenModal(false);
       setEditingUser(null);
       fetchUsers();
@@ -235,6 +273,8 @@ export const UserManagementPage: React.FC = () => {
                   <TableCell>Branch Scope</TableCell>
                   <TableCell>Assigned Role</TableCell>
                   <TableCell>Account Status</TableCell>
+                  <TableCell align="center">2-Step 2FA</TableCell>
+                  <TableCell align="center">Geo-Fencing</TableCell>
                   <TableCell align="center">Actions</TableCell>
                 </TableRow>
               </TableHead>
@@ -269,7 +309,38 @@ export const UserManagementPage: React.FC = () => {
                       />
                     </TableCell>
                     <TableCell align="center">
-                      <Tooltip title="Edit Security Role & Scope">
+                      <Chip
+                        label={u.is2faEnabled !== false ? 'Enabled' : 'Disabled'}
+                        color={u.is2faEnabled !== false ? 'success' : 'default'}
+                        variant={u.is2faEnabled !== false ? 'filled' : 'outlined'}
+                        size="small"
+                        sx={{ fontWeight: 700, fontSize: '0.72rem' }}
+                      />
+                    </TableCell>
+                    <TableCell align="center">
+                      {u.isRegionRestricted ? (
+                        <Chip
+                          label={
+                            u.allowedLatitude != null && u.allowedLongitude != null
+                              ? `Zone (${Number(u.allowedLatitude).toFixed(2)}, ${Number(u.allowedLongitude).toFixed(2)} - ${u.allowedRadiusKm || 25}km)`
+                              : `Restricted (${u.allowedRegions || 'IN'})`
+                          }
+                          color="warning"
+                          size="small"
+                          sx={{ fontWeight: 700, fontSize: '0.72rem' }}
+                        />
+                      ) : (
+                        <Chip
+                          label="Any Region"
+                          color="default"
+                          size="small"
+                          variant="outlined"
+                          sx={{ fontSize: '0.72rem' }}
+                        />
+                      )}
+                    </TableCell>
+                    <TableCell align="center">
+                      <Tooltip title="Edit Security Role & Geo-Fencing">
                         <IconButton size="small" color="primary" onClick={() => handleOpenEdit(u)}>
                           <EditIcon fontSize="small" />
                         </IconButton>
@@ -378,6 +449,121 @@ export const UserManagementPage: React.FC = () => {
                 <MenuItem value="Active">Active</MenuItem>
                 <MenuItem value="Inactive">Inactive</MenuItem>
               </TextField>
+            </Grid>
+
+            {/* 2-Step Verification Policy */}
+            <Grid item xs={12}>
+              <Box sx={{ p: 2, bgcolor: '#F8FAFC', borderRadius: 2, border: '1px solid #E2E8F0' }}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={formData.is2faEnabled}
+                      onChange={(e) => setFormData({ ...formData, is2faEnabled: e.target.checked })}
+                      color="primary"
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                        Enable 2-Step Verification (MFA)
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                        Requires 6-digit OTP when logging in from an unrecognized device or browser.
+                      </Typography>
+                    </Box>
+                  }
+                />
+              </Box>
+            </Grid>
+
+            {/* Region / Geo-Fencing Policy */}
+            <Grid item xs={12}>
+              <Box sx={{ p: 2, bgcolor: formData.isRegionRestricted ? '#FFFBEB' : '#F8FAFC', borderRadius: 2, border: formData.isRegionRestricted ? '1px solid #FDE68A' : '1px solid #E2E8F0' }}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={formData.isRegionRestricted}
+                      onChange={(e) => setFormData({ ...formData, isRegionRestricted: e.target.checked })}
+                      color="warning"
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 700, color: formData.isRegionRestricted ? '#B45309' : '#1E293B' }}>
+                        Restrict Login by Geographical Region (Geo-Fencing)
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                        Enforce login restriction so this user can only access the system from authorized countries.
+                      </Typography>
+                    </Box>
+                  }
+                />
+
+                {formData.isRegionRestricted && (
+                  <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label="Allowed Country ISO Codes / Names *"
+                      value={formData.allowedRegions}
+                      onChange={(e) => setFormData({ ...formData, allowedRegions: e.target.value })}
+                      placeholder="e.g. IN (India) or IN, US"
+                      helperText="Comma-separated country codes (e.g. IN for India). User will only be allowed to sign in from these countries."
+                    />
+
+                    <Divider sx={{ my: 0.5 }}>
+                      <Chip label="OR SPECIFIC GEOGRAPHIC WORK ZONE (GPS COORDINATES)" size="small" sx={{ fontSize: '0.68rem', fontWeight: 600 }} />
+                    </Divider>
+
+                    <Grid container spacing={1.5}>
+                      <Grid item xs={12} sm={4}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          label="Latitude"
+                          placeholder="e.g. 19.0760"
+                          value={formData.allowedLatitude}
+                          onChange={(e) => setFormData({ ...formData, allowedLatitude: e.target.value })}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={4}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          label="Longitude"
+                          placeholder="e.g. 72.8777"
+                          value={formData.allowedLongitude}
+                          onChange={(e) => setFormData({ ...formData, allowedLongitude: e.target.value })}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={4}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          label="Allowed Radius (km)"
+                          placeholder="25"
+                          value={formData.allowedRadiusKm}
+                          onChange={(e) => setFormData({ ...formData, allowedRadiusKm: e.target.value })}
+                        />
+                      </Grid>
+                      <Grid item xs={12}>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          color="warning"
+                          onClick={handleGetCurrentLocation}
+                          sx={{ textTransform: 'none', fontWeight: 600 }}
+                        >
+                          📍 Detect & Set Current GPS Coordinates
+                        </Button>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                          If coordinates are set, the employee will only be permitted to log in within the specified radius of this location.
+                        </Typography>
+                      </Grid>
+                    </Grid>
+                  </Box>
+                )}
+              </Box>
             </Grid>
           </Grid>
         </DialogContent>

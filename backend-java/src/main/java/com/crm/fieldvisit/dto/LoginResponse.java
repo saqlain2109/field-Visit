@@ -17,6 +17,15 @@ public class LoginResponse {
     private Boolean autoProvisioned;
     private UserDto user;
 
+    // 2-Step Verification Challenge fields
+    private Boolean requires2FA;
+    private String verificationToken;
+    private String maskedEmail;
+    private String maskedPhone;
+    private String devOtp;
+    private Boolean isNewDevice;
+    private String clientRegion;
+
     @Data
     @Builder
     @NoArgsConstructor
@@ -40,5 +49,8 @@ public class LoginResponse {
         private String designation;
         private String designationTitle;
         private Boolean isPasswordSet;
+        private Boolean is2faEnabled;
+        private Boolean isRegionRestricted;
+        private String allowedRegions;
     }
 }

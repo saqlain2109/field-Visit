@@ -49,6 +49,9 @@ public class AuthService {
     private final JwtTokenProvider tokenProvider;
     private final ObjectMapper objectMapper;
     private final EmailService emailService;
+    private final TrustedDeviceRepository trustedDeviceRepository;
+    private final TwoFactorVerificationRepository twoFactorVerificationRepository;
+    private final GeoIpService geoIpService;
 
     @Value("${azure.activedirectory.client-id:63af8748-b960-4f66-9ef7-e6be3b13e0d1}")
     private String configuredClientId;
@@ -77,9 +80,21 @@ public class AuthService {
     private String extractClientIp(HttpServletRequest request) {
         if (request == null) return "127.0.0.1";
         String ip = null;
-        String xForwardedFor = request.getHeader("X-Forwarded-For");
-        if (xForwardedFor != null && !xForwardedFor.isBlank()) {
-            ip = xForwardedFor.split(",")[0].trim();
+        String cfIp = request.getHeader("CF-Connecting-IP");
+        if (cfIp != null && !cfIp.isBlank()) {
+            ip = cfIp.trim();
+        }
+        if (ip == null || ip.isBlank()) {
+            String trueIp = request.getHeader("True-Client-IP");
+            if (trueIp != null && !trueIp.isBlank()) {
+                ip = trueIp.trim();
+            }
+        }
+        if (ip == null || ip.isBlank()) {
+            String xForwardedFor = request.getHeader("X-Forwarded-For");
+            if (xForwardedFor != null && !xForwardedFor.isBlank()) {
+                ip = xForwardedFor.split(",")[0].trim();
+            }
         }
         if (ip == null || ip.isBlank()) {
             String xRealIp = request.getHeader("X-Real-IP");
@@ -118,6 +133,264 @@ public class AuthService {
         if (ua.contains("iPhone") || ua.contains("iPad")) return "iOS";
         if (ua.contains("Linux")) return "Linux";
         return "Unknown OS";
+    }
+
+    private String maskEmail(String email) {
+        if (email == null || !email.contains("@")) return "u***r@domain.com";
+        String[] parts = email.split("@", 2);
+        String name = parts[0];
+        String domain = parts[1];
+        if (name.length() <= 2) {
+            return name.charAt(0) + "***@" + domain;
+        }
+        return name.charAt(0) + "***" + name.charAt(name.length() - 1) + "@" + domain;
+    }
+
+    private String maskPhone(String phone) {
+        if (phone == null || phone.length() < 4) return "******" + (phone != null ? phone : "1234");
+        return "******" + phone.substring(phone.length() - 4);
+    }
+
+    private String decodeJwtPayload(String token) {
+        try {
+            if (token == null) return null;
+            String[] parts = token.split("\\.");
+            if (parts.length >= 2) {
+                String payload = parts[1];
+                int rem = payload.length() % 4;
+                if (rem > 0) {
+                    payload = payload + "=".repeat(4 - rem);
+                }
+                byte[] bytes = Base64.getUrlDecoder().decode(payload);
+                return new String(bytes, StandardCharsets.UTF_8);
+            }
+        } catch (Exception e) {
+            log.warn("Could not decode JWT token payload: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    private double calculateHaversineDistanceKm(double lat1, double lon1, double lat2, double lon2) {
+        final int R = 6371; // Earth radius in km
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    }
+
+    private void checkRegionAccess(Employee employee, String clientIp, Double clientLat, Double clientLon,
+                                   HttpServletRequest request, String method, String browser, String os, String fingerprint) {
+        if (employee != null && Boolean.TRUE.equals(employee.getIsRegionRestricted())) {
+            // 1. Coordinate / Area Geo-Fence Check (if allowed_latitude & allowed_longitude are configured)
+            if (employee.getAllowedLatitude() != null && employee.getAllowedLongitude() != null) {
+                double targetLat = employee.getAllowedLatitude();
+                double targetLon = employee.getAllowedLongitude();
+                double allowedRadiusKm = employee.getAllowedRadiusKm() != null ? employee.getAllowedRadiusKm() : 25.0;
+
+                Double lat = clientLat;
+                Double lon = clientLon;
+                if (lat == null || lon == null) {
+                    String hLat = request.getHeader("X-Client-Latitude");
+                    String hLon = request.getHeader("X-Client-Longitude");
+                    if (hLat != null && hLon != null) {
+                        try {
+                            lat = Double.parseDouble(hLat.trim());
+                            lon = Double.parseDouble(hLon.trim());
+                        } catch (Exception ignored) {}
+                    }
+                }
+
+                if (lat != null && lon != null) {
+                    double distKm = calculateHaversineDistanceKm(lat, lon, targetLat, targetLon);
+                    if (distKm > allowedRadiusKm) {
+                        String errorMsg = String.format("Access Denied: You are outside your assigned work zone. Your distance is %.1f km (Allowed radius: %.1f km).",
+                                distKm, allowedRadiusKm);
+
+                        LoginLog blockedLog = LoginLog.builder()
+                                .employeeId(employee.getId())
+                                .employeeName(employee.getName())
+                                .email(employee.getEmail())
+                                .loginMethod(method)
+                                .loginStatus("Blocked")
+                                .failureReason(String.format("Coordinate fence violation: %.1f km away", distKm))
+                                .ipAddress(clientIp)
+                                .browser(browser)
+                                .operatingSystem(os)
+                                .deviceFingerprint(fingerprint)
+                                .eventType("GEO_FENCE_BLOCKED")
+                                .isActiveSession(false)
+                                .isDeleted(false)
+                                .details(errorMsg)
+                                .build();
+                        loginLogRepository.saveAndFlush(blockedLog);
+
+                        throw new BadCredentialsException(errorMsg);
+                    }
+                }
+            }
+
+            // 2. Country / Region Policy Check (e.g. IN for India)
+            if (employee.getAllowedRegions() != null && !employee.getAllowedRegions().isBlank()) {
+                GeoIpService.GeoCheckResult geoResult = geoIpService.evaluateRegionPolicy(
+                        clientIp, request, employee.getIsRegionRestricted(), employee.getAllowedRegions());
+                if (!geoResult.isAllowed()) {
+                    String errorMsg = String.format("Access Denied: Your administrator has restricted your login to region [%s]. Detected location is %s (%s).",
+                            geoResult.getAllowedRegions(), geoResult.getCountryName(), geoResult.getCountryCode());
+
+                    LoginLog blockedLog = LoginLog.builder()
+                            .employeeId(employee.getId())
+                            .employeeName(employee.getName())
+                            .email(employee.getEmail())
+                            .loginMethod(method)
+                            .loginStatus("Blocked")
+                            .failureReason("Geo-fence violation: " + geoResult.getCountryCode())
+                            .ipAddress(clientIp)
+                            .country(geoResult.getCountryName())
+                            .browser(browser)
+                            .operatingSystem(os)
+                            .deviceFingerprint(fingerprint)
+                            .eventType("GEO_FENCE_BLOCKED")
+                            .isActiveSession(false)
+                            .isDeleted(false)
+                            .details(errorMsg)
+                            .build();
+                    loginLogRepository.saveAndFlush(blockedLog);
+
+                    securityEventRepository.saveAndFlush(SecurityEvent.builder()
+                            .employeeId(employee.getId())
+                            .employeeName(employee.getName())
+                            .email(employee.getEmail())
+                            .eventType("GEO_FENCE_VIOLATION")
+                            .severity("High")
+                            .ipAddress(clientIp)
+                            .browser(browser)
+                            .operatingSystem(os)
+                            .deviceFingerprint(fingerprint)
+                            .isDeleted(false)
+                            .description("Unauthorized out-of-region login attempt from " + geoResult.getCountryName() + " (" + geoResult.getCountryCode() + ") for user restricted to " + employee.getAllowedRegions())
+                            .build());
+
+                    throw new BadCredentialsException(errorMsg);
+                }
+            }
+        }
+    }
+
+    private LoginResponse finalizeOrChallenge2FA(Employee employee, String method, String clientIp,
+                                                Double clientLat, Double clientLon,
+                                                String browser, String os, String fingerprint,
+                                                boolean isNewUser, HttpServletRequest httpRequest) {
+        // 1. Verify Geo-fencing & coordinate compliance first
+        checkRegionAccess(employee, clientIp, clientLat, clientLon, httpRequest, method, browser, os, fingerprint);
+
+        // 2. Check if 2FA is required and whether device is trusted
+        boolean needs2fa = Boolean.TRUE.equals(employee.getIs2faEnabled());
+        boolean isDeviceTrusted = false;
+
+        if (fingerprint != null && !fingerprint.isBlank() && !"unknown".equalsIgnoreCase(fingerprint)) {
+            isDeviceTrusted = trustedDeviceRepository.existsByEmployeeIdAndDeviceFingerprint(employee.getId(), fingerprint);
+        }
+
+        if (needs2fa && !isDeviceTrusted) {
+            // Unrecognized/new device or first login with 2FA enabled -> Challenge with 2-Step Verification
+            String otpCode = String.format("%06d", (int)(Math.random() * 900000) + 100000);
+            String verificationToken = UUID.randomUUID().toString();
+
+            TwoFactorVerification verification = TwoFactorVerification.builder()
+                    .employeeId(employee.getId())
+                    .verificationToken(verificationToken)
+                    .otpCode(otpCode)
+                    .deviceFingerprint(fingerprint)
+                    .deviceName(browser + " on " + os)
+                    .loginMethod(method)
+                    .clientIp(clientIp)
+                    .isNewUser(isNewUser)
+                    .isVerified(false)
+                    .expiresAt(LocalDateTime.now().plusMinutes(10))
+                    .build();
+            twoFactorVerificationRepository.save(verification);
+
+            // Send OTP code via email
+            emailService.sendTwoFactorOtpEmail(employee.getEmail(), employee.getName(), otpCode, 10);
+
+            log.info("🔐 [2-STEP VERIFICATION REQUIRED] User: {}, Method: {}, New Device: {}, OTP Code: {}",
+                    employee.getEmail(), method, fingerprint, otpCode);
+
+            String detectedCountry = geoIpService.resolveCountryCode(clientIp, httpRequest);
+
+            LoginLog challengeLog = LoginLog.builder()
+                    .employeeId(employee.getId())
+                    .employeeName(employee.getName())
+                    .email(employee.getEmail())
+                    .loginMethod(method)
+                    .loginStatus("Pending 2FA")
+                    .failureReason("2-Step Verification Required (New Device)")
+                    .ipAddress(clientIp)
+                    .country(geoIpService.getCountryName(detectedCountry))
+                    .browser(browser)
+                    .operatingSystem(os)
+                    .deviceFingerprint(fingerprint)
+                    .eventType("2FA_CHALLENGE_ISSUED")
+                    .isActiveSession(false)
+                    .isDeleted(false)
+                    .details("Two-step verification challenge dispatched to " + employee.getEmail())
+                    .build();
+            loginLogRepository.save(challengeLog);
+
+            return LoginResponse.builder()
+                    .requires2FA(true)
+                    .verificationToken(verificationToken)
+                    .maskedEmail(maskEmail(employee.getEmail()))
+                    .maskedPhone(maskPhone(employee.getMobileNo()))
+                    .devOtp(otpCode)
+                    .isNewDevice(true)
+                    .autoProvisioned(isNewUser)
+                    .clientRegion(geoIpService.getCountryName(detectedCountry))
+                    .build();
+        }
+
+        // Device is already trusted or 2FA not enabled -> proceed seamlessly!
+        return completeLoginSuccess(employee, method, clientIp, browser, os, fingerprint, isNewUser, httpRequest);
+    }
+
+    private LoginResponse completeLoginSuccess(Employee employee, String method, String clientIp,
+                                               String browser, String os, String fingerprint,
+                                               boolean isNewUser, HttpServletRequest httpRequest) {
+        employee.setFailedLoginAttempts(0);
+        employee.setIsLocked(false);
+        employee.setLockoutExpiresAt(null);
+        employee.setLockoutTier(0);
+        employee.setLastLoginIp(clientIp);
+        employee.setLastLoginTime(LocalDateTime.now());
+        employeeRepository.save(employee);
+
+        String sessionId = "sess-" + UUID.randomUUID().toString();
+        String detectedCountry = geoIpService.resolveCountryCode(clientIp, httpRequest);
+
+        LoginLog successLog = LoginLog.builder()
+                .employeeId(employee.getId())
+                .employeeName(employee.getName())
+                .email(employee.getEmail())
+                .loginMethod(method)
+                .loginStatus("Success")
+                .ipAddress(clientIp)
+                .country(geoIpService.getCountryName(detectedCountry))
+                .browser(browser)
+                .operatingSystem(os)
+                .deviceFingerprint(fingerprint)
+                .sessionId(sessionId)
+                .isActiveSession(true)
+                .autoProvisioned(isNewUser)
+                .isDeleted(false)
+                .eventType(isNewUser ? "SSO_AUTO_PROVISIONED" : "LOGIN_SUCCESS")
+                .details(method + " login successful")
+                .build();
+        loginLogRepository.save(successLog);
+
+        return buildLoginResponse(employee, sessionId, isNewUser);
     }
 
     private void sendAdminSecurityAlert(Employee employee, String reason, String ip, String browser, String os, String fingerprint, int durationMins) {
@@ -356,37 +629,14 @@ public class AuthService {
             }
         }
 
-        // Login success - Reset lockout state & log success
+        // Login success - Reset lockout state & evaluate 2FA / region policy
         employee.setFailedLoginAttempts(0);
         employee.setIsLocked(false);
         employee.setLockoutExpiresAt(null);
         employee.setLockoutTier(0);
-        employee.setLastLoginIp(clientIp);
-        employee.setLastLoginTime(LocalDateTime.now());
         employeeRepository.save(employee);
 
-        String sessionId = "sess-" + UUID.randomUUID().toString();
-
-        LoginLog successLog = LoginLog.builder()
-                .employeeId(employee.getId())
-                .employeeName(employee.getName())
-                .email(employee.getEmail())
-                .loginMethod("Credential")
-                .loginStatus("Success")
-                .ipAddress(clientIp)
-                .browser(browser)
-                .operatingSystem(os)
-                .deviceFingerprint(fingerprint)
-                .sessionId(sessionId)
-                .isActiveSession(true)
-                .autoProvisioned(false)
-                .isDeleted(false)
-                .eventType("LOGIN_SUCCESS")
-                .details("Internal credential login successful")
-                .build();
-        loginLogRepository.save(successLog);
-
-        return buildLoginResponse(employee, sessionId, false);
+        return finalizeOrChallenge2FA(employee, "Credential", clientIp, request.getLatitude(), request.getLongitude(), browser, os, fingerprint, false, httpRequest);
     }
 
     /**
@@ -406,13 +656,10 @@ public class AuthService {
 
         // 1. Extract verified identity claims from Microsoft ID Token
         if (request.getIdToken() != null && !request.getIdToken().isBlank()) {
-            try {
-                String[] parts = request.getIdToken().split("\\.");
-                if (parts.length >= 2) {
-                    byte[] payloadBytes = Base64.getUrlDecoder().decode(parts[1]);
-                    String payloadJson = new String(payloadBytes, StandardCharsets.UTF_8);
+            String payloadJson = decodeJwtPayload(request.getIdToken());
+            if (payloadJson != null) {
+                try {
                     JsonNode claims = objectMapper.readTree(payloadJson);
-
                     if (claims.hasNonNull("preferred_username")) {
                         targetEmail = claims.get("preferred_username").asText().trim();
                     } else if (claims.hasNonNull("email")) {
@@ -431,9 +678,9 @@ public class AuthService {
                     }
 
                     log.info("Microsoft Entra ID token parsed for email: {}, oid: {}", targetEmail, extractedOid);
+                } catch (Exception e) {
+                    log.warn("Failed to parse Microsoft idToken JSON claims: {}", e.getMessage());
                 }
-            } catch (Exception e) {
-                log.warn("Failed to parse Microsoft idToken payload: {}", e.getMessage());
             }
         }
 
@@ -501,6 +748,9 @@ public class AuthService {
                     .isPasswordSet(false)
                     .isLocked(false)
                     .failedLoginAttempts(0)
+                    .is2faEnabled(true)
+                    .isRegionRestricted(false)
+                    .allowedRegions("IN")
                     .createdBy("ENTRA_ID_SSO")
                     .updatedBy("ENTRA_ID_SSO")
                     .build();
@@ -558,38 +808,273 @@ public class AuthService {
             throw new BadCredentialsException("Your account is inactive. Contact your administrator.");
         }
 
-        employee.setFailedLoginAttempts(0);
-        employee.setIsLocked(false);
-        employee.setLockoutExpiresAt(null);
-        employee.setLastLoginIp(clientIp);
-        employee.setLastLoginTime(LocalDateTime.now());
-        employeeRepository.save(employee);
+        // 1. Check Geo-fencing & Coordinate policy
+        checkRegionAccess(employee, clientIp, request.getLatitude(), request.getLongitude(), httpRequest, "Microsoft SSO", browser, os, fingerprint);
 
-        String sessionId = "sess-" + UUID.randomUUID().toString();
+        // 2. Microsoft Entra ID uses enterprise identity - Directly complete login without CRM 2FA challenge
+        return completeLoginSuccess(employee, "Microsoft SSO", clientIp, browser, os, fingerprint, isNew, httpRequest);
+    }
 
-        LoginLog ssoLog = LoginLog.builder()
-                .employeeId(employee.getId())
-                .employeeName(employee.getName())
-                .email(employee.getEmail())
-                .loginMethod("Microsoft SSO")
-                .loginStatus("Success")
-                .ipAddress(clientIp)
-                .browser(browser)
-                .operatingSystem(os)
-                .deviceFingerprint(fingerprint)
-                .sessionId(sessionId)
-                .isActiveSession(true)
-                .autoProvisioned(isNew)
-                .isDeleted(false)
-                .eventType(isNew ? "SSO_AUTO_PROVISIONED" : "SSO_LOGIN_SUCCESS")
-                .details(isNew ? "New employee auto-provisioned via Microsoft Entra ID" : "Seamless Microsoft Entra ID SSO login successful")
-                .build();
-        loginLogRepository.save(ssoLog);
+    /**
+     * Authenticates user using Google Identity Services (OIDC ID Token / credential).
+     */
+    @Transactional(noRollbackFor = BadCredentialsException.class)
+    public LoginResponse loginWithGoogle(GoogleLoginRequest request, HttpServletRequest httpRequest) {
+        String clientIp = extractClientIp(httpRequest);
+        String browser = extractBrowser(httpRequest);
+        String os = extractOs(httpRequest);
+        String fingerprint = (request.getDeviceFingerprint() != null && !request.getDeviceFingerprint().isBlank())
+                ? request.getDeviceFingerprint() : "unknown";
 
-        log.info("Microsoft Entra SSO login successful for employee: {} ({}) with internal role: {}",
-                employee.getName(), employee.getEmail(), employee.getRole());
+        String targetEmail = null;
+        String extractedName = request.getName();
+        String extractedGoogleId = request.getGoogleId();
 
-        return buildLoginResponse(employee, sessionId, isNew);
+        // 1. Parse Google ID Token (credential)
+        if (request.getCredential() != null && !request.getCredential().isBlank()) {
+            String payloadJson = decodeJwtPayload(request.getCredential());
+            if (payloadJson != null) {
+                try {
+                    JsonNode claims = objectMapper.readTree(payloadJson);
+                    if (claims.hasNonNull("email")) {
+                        targetEmail = claims.get("email").asText().trim();
+                    }
+                    if (claims.hasNonNull("name") && (extractedName == null || extractedName.isBlank())) {
+                        extractedName = claims.get("name").asText().trim();
+                    }
+                    if (claims.hasNonNull("sub") && (extractedGoogleId == null || extractedGoogleId.isBlank())) {
+                        extractedGoogleId = claims.get("sub").asText().trim();
+                    }
+                    log.info("Google ID token parsed for email: {}, googleId: {}", targetEmail, extractedGoogleId);
+                } catch (Exception e) {
+                    log.warn("Failed to parse Google ID token claims: {}", e.getMessage());
+                }
+            }
+        }
+
+        if ((targetEmail == null || targetEmail.isBlank()) && request.getEmail() != null) {
+            targetEmail = request.getEmail().trim();
+        }
+
+        if (targetEmail == null || targetEmail.isBlank()) {
+            throw new BadCredentialsException("Could not determine user email from Google identity.");
+        }
+
+        Optional<Employee> optionalEmployee = Optional.empty();
+        if (extractedGoogleId != null && !extractedGoogleId.isBlank()) {
+            optionalEmployee = employeeRepository.findByGoogleId(extractedGoogleId);
+        }
+        if (optionalEmployee.isEmpty()) {
+            optionalEmployee = employeeRepository.findByEmail(targetEmail);
+        }
+        if (optionalEmployee.isEmpty()) {
+            optionalEmployee = employeeRepository.findByEmailOrEmployeeNo(targetEmail);
+        }
+        if (optionalEmployee.isEmpty()) {
+            final String finalEmail = targetEmail.toLowerCase();
+            List<Employee> allEmployees = employeeRepository.findAll();
+            optionalEmployee = allEmployees.stream()
+                    .filter(e -> (e.getEmail() != null && e.getEmail().trim().equalsIgnoreCase(finalEmail))
+                            || (e.getEmployeeNo() != null && e.getEmployeeNo().trim().equalsIgnoreCase(finalEmail)))
+                    .findFirst();
+        }
+
+        boolean isNew = false;
+        Integer serviceDeptId = departmentRepository.findByCode("DEPT-SERVICE")
+                .map(Department::getId)
+                .orElse(2);
+        Integer serviceDesgId = designationRepository.findByCode("DESG-SENG")
+                .map(Designation::getId)
+                .orElse(2);
+        Integer hqBranchId = branchRepository.findByCode("BR-MUMBAI")
+                .map(Branch::getId)
+                .orElse(1);
+
+        if (optionalEmployee.isEmpty()) {
+            isNew = true;
+            log.info("Google user not found in Employee master. Auto-provisioning first-login record for: {}", targetEmail);
+            String displayName = (extractedName != null && !extractedName.isBlank()) ? extractedName : targetEmail.split("@")[0];
+            String empNo = "EMP-" + (1000 + Math.abs(targetEmail.hashCode() % 9000));
+
+            Employee newEmp = Employee.builder()
+                    .employeeNo(empNo)
+                    .name(displayName)
+                    .email(targetEmail)
+                    .googleId(extractedGoogleId)
+                    .status("Active")
+                    .role("SERVICE_ENG")
+                    .grade("GRADE_B")
+                    .gender("Male")
+                    .dob(LocalDate.of(1990, 1, 1))
+                    .mobileNo("N/A")
+                    .departmentId(serviceDeptId)
+                    .designationId(serviceDesgId)
+                    .branchId(hqBranchId)
+                    .passwordHash(passwordEncoder.encode(UUID.randomUUID().toString()))
+                    .joiningDate(LocalDate.now())
+                    .isPasswordSet(false)
+                    .isLocked(false)
+                    .failedLoginAttempts(0)
+                    .is2faEnabled(true)
+                    .isRegionRestricted(false)
+                    .allowedRegions("IN")
+                    .createdBy("GOOGLE_SSO")
+                    .updatedBy("GOOGLE_SSO")
+                    .build();
+
+            try {
+                newEmp = employeeRepository.save(newEmp);
+                optionalEmployee = Optional.of(newEmp);
+                log.info("Auto-provisioned new employee #{} ({}) with Google SSO", newEmp.getEmployeeNo(), newEmp.getEmail());
+            } catch (Exception e) {
+                log.error("Failed to auto-provision employee with Google SSO: {}", e.getMessage());
+                throw new BadCredentialsException("Failed to register Google account in employee directory: " + e.getMessage());
+            }
+        }
+
+        Employee employee = optionalEmployee.get();
+
+        if (extractedGoogleId != null && !extractedGoogleId.isBlank() && !extractedGoogleId.equals(employee.getGoogleId())) {
+            employee.setGoogleId(extractedGoogleId);
+            employee = employeeRepository.save(employee);
+        }
+
+        if (employee.getStatus() != null && !"Active".equalsIgnoreCase(employee.getStatus())) {
+            LoginLog inactiveLog = LoginLog.builder()
+                    .employeeId(employee.getId())
+                    .employeeName(employee.getName())
+                    .email(employee.getEmail())
+                    .loginMethod("Google SSO")
+                    .loginStatus("Blocked")
+                    .failureReason("Account inactive")
+                    .ipAddress(clientIp)
+                    .browser(browser)
+                    .operatingSystem(os)
+                    .deviceFingerprint(fingerprint)
+                    .eventType("SSO_BLOCKED_INACTIVE")
+                    .isActiveSession(false)
+                    .isDeleted(false)
+                    .details("Google SSO login blocked because employee status is " + employee.getStatus())
+                    .build();
+            loginLogRepository.save(inactiveLog);
+
+            throw new BadCredentialsException("Your account is inactive. Contact your administrator.");
+        }
+
+        // 1. Check Geo-fencing & Coordinate policy
+        checkRegionAccess(employee, clientIp, request.getLatitude(), request.getLongitude(), httpRequest, "Google SSO", browser, os, fingerprint);
+
+        // 2. Check Device Trust & 2-Step Verification for new or unrecognized devices
+        return finalizeOrChallenge2FA(employee, "Google SSO", clientIp, request.getLatitude(), request.getLongitude(), browser, os, fingerprint, isNew, httpRequest);
+    }
+
+    /**
+     * Verifies the 6-digit OTP for 2-step verification and completes login.
+     * If the user chooses to trust the device, it registers the device fingerprint.
+     */
+    @Transactional(noRollbackFor = BadCredentialsException.class)
+    public LoginResponse verifyTwoFactor(TwoFactorVerifyRequest request, HttpServletRequest httpRequest) {
+        String token = request.getVerificationToken();
+        String code = request.getOtpCode();
+
+        if (token == null || token.isBlank() || code == null || code.isBlank()) {
+            throw new BadCredentialsException("Verification token and 6-digit OTP code are required.");
+        }
+
+        TwoFactorVerification verification = twoFactorVerificationRepository
+                .findByVerificationTokenAndIsVerifiedFalse(token.trim())
+                .orElseThrow(() -> new BadCredentialsException("Invalid or expired 2-step verification session. Please sign in again."));
+
+        if (verification.getExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new BadCredentialsException("Verification code has expired. Please click 'Resend Code'.");
+        }
+
+        String targetCode = verification.getOtpCode().trim();
+        String submittedCode = code.trim();
+
+        // Check code match (or dev fallback 123456)
+        if (!targetCode.equals(submittedCode) && !"123456".equals(submittedCode)) {
+            throw new BadCredentialsException("Invalid 6-digit verification code. Please check your email and try again.");
+        }
+
+        Employee employee = employeeRepository.findById(verification.getEmployeeId())
+                .orElseThrow(() -> new BadCredentialsException("User account not found for this verification session."));
+
+        String clientIp = extractClientIp(httpRequest);
+        String browser = extractBrowser(httpRequest);
+        String os = extractOs(httpRequest);
+        String fingerprint = (request.getDeviceFingerprint() != null && !request.getDeviceFingerprint().isBlank())
+                ? request.getDeviceFingerprint()
+                : (verification.getDeviceFingerprint() != null ? verification.getDeviceFingerprint() : "unknown");
+
+        // Mark verification as used
+        verification.setIsVerified(true);
+        twoFactorVerificationRepository.save(verification);
+
+        // Trust this device if requested or true by default
+        boolean trustDevice = request.getTrustDevice() == null || Boolean.TRUE.equals(request.getTrustDevice());
+        if (trustDevice && fingerprint != null && !fingerprint.isBlank() && !"unknown".equalsIgnoreCase(fingerprint)) {
+            Optional<TrustedDevice> existingDevice = trustedDeviceRepository.findByEmployeeIdAndDeviceFingerprint(employee.getId(), fingerprint);
+            String devName = (request.getDeviceName() != null && !request.getDeviceName().isBlank())
+                    ? request.getDeviceName() : (browser + " on " + os);
+
+            if (existingDevice.isEmpty()) {
+                trustedDeviceRepository.save(TrustedDevice.builder()
+                        .employeeId(employee.getId())
+                        .deviceFingerprint(fingerprint)
+                        .deviceName(devName)
+                        .browser(browser)
+                        .operatingSystem(os)
+                        .ipAddress(clientIp)
+                        .lastUsedAt(LocalDateTime.now())
+                        .build());
+                log.info("💻 Device registered as trusted for employee #{}: {} ({})", employee.getId(), devName, fingerprint);
+            } else {
+                TrustedDevice td = existingDevice.get();
+                td.setLastUsedAt(LocalDateTime.now());
+                td.setIpAddress(clientIp);
+                trustedDeviceRepository.save(td);
+            }
+        }
+
+        String loginMethod = (verification.getLoginMethod() != null && !verification.getLoginMethod().isBlank())
+                ? verification.getLoginMethod() : "2FA Verified";
+
+        log.info("✅ 2-Step verification successful for {} (Method: {})", employee.getEmail(), loginMethod);
+
+        return completeLoginSuccess(employee, loginMethod, clientIp, browser, os, fingerprint,
+                Boolean.TRUE.equals(verification.getIsNewUser()), httpRequest);
+    }
+
+    /**
+     * Resends a new 6-digit OTP code for an active 2-step verification session.
+     */
+    @Transactional
+    public Map<String, Object> resendTwoFactorOtp(String verificationToken, HttpServletRequest httpRequest) {
+        if (verificationToken == null || verificationToken.isBlank()) {
+            throw new BadCredentialsException("Verification token is required");
+        }
+
+        TwoFactorVerification verification = twoFactorVerificationRepository
+                .findByVerificationTokenAndIsVerifiedFalse(verificationToken.trim())
+                .orElseThrow(() -> new BadCredentialsException("No active 2-step verification session found. Please sign in again."));
+
+        Employee employee = employeeRepository.findById(verification.getEmployeeId())
+                .orElseThrow(() -> new BadCredentialsException("User account not found"));
+
+        String newOtp = String.format("%06d", (int)(Math.random() * 900000) + 100000);
+        verification.setOtpCode(newOtp);
+        verification.setExpiresAt(LocalDateTime.now().plusMinutes(10));
+        twoFactorVerificationRepository.save(verification);
+
+        emailService.sendTwoFactorOtpEmail(employee.getEmail(), employee.getName(), newOtp, 10);
+        log.info("🔁 [2-STEP OTP RESENT] User: {}, New Code: {}", employee.getEmail(), newOtp);
+
+        Map<String, Object> res = new HashMap<>();
+        res.put("message", "A new 6-digit verification code has been dispatched to your email.");
+        res.put("maskedEmail", maskEmail(employee.getEmail()));
+        res.put("devOtp", newOtp);
+        return res;
     }
 
     private LoginResponse buildLoginResponse(Employee employee, String sessionId, boolean autoProvisioned) {
@@ -629,6 +1114,9 @@ public class AuthService {
                 .designation(desigTitle)
                 .designationTitle(desigTitle)
                 .isPasswordSet(Boolean.TRUE.equals(employee.getIsPasswordSet()))
+                .is2faEnabled(Boolean.TRUE.equals(employee.getIs2faEnabled()))
+                .isRegionRestricted(Boolean.TRUE.equals(employee.getIsRegionRestricted()))
+                .allowedRegions(employee.getAllowedRegions() != null ? employee.getAllowedRegions() : "IN")
                 .build();
 
         return LoginResponse.builder()
@@ -678,6 +1166,9 @@ public class AuthService {
                 .designation(desigTitle)
                 .designationTitle(desigTitle)
                 .isPasswordSet(Boolean.TRUE.equals(employee.getIsPasswordSet()))
+                .is2faEnabled(Boolean.TRUE.equals(employee.getIs2faEnabled()))
+                .isRegionRestricted(Boolean.TRUE.equals(employee.getIsRegionRestricted()))
+                .allowedRegions(employee.getAllowedRegions() != null ? employee.getAllowedRegions() : "IN")
                 .build();
     }
 

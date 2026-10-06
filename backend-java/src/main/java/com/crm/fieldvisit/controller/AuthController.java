@@ -44,6 +44,31 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
+    @Operation(summary = "Login with Google Identity Services (SSO)")
+    @PostMapping("/google")
+    public ResponseEntity<ApiResponse<LoginResponse>> loginWithGoogle(@RequestBody GoogleLoginRequest request,
+                                                                      HttpServletRequest httpRequest) {
+        LoginResponse response = authService.loginWithGoogle(request, httpRequest);
+        return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    @Operation(summary = "Verify 2-Step Verification OTP Code")
+    @PostMapping("/verify-2fa")
+    public ResponseEntity<ApiResponse<LoginResponse>> verifyTwoFactor(@Valid @RequestBody TwoFactorVerifyRequest request,
+                                                                      HttpServletRequest httpRequest) {
+        LoginResponse response = authService.verifyTwoFactor(request, httpRequest);
+        return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    @Operation(summary = "Resend 2-Step Verification OTP Code")
+    @PostMapping("/resend-2fa")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> resendTwoFactor(@RequestBody Map<String, String> request,
+                                                                            HttpServletRequest httpRequest) {
+        String token = request != null ? request.get("verificationToken") : null;
+        Map<String, Object> response = authService.resendTwoFactorOtp(token, httpRequest);
+        return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
     @Operation(summary = "Get current authenticated user profile")
     @SecurityRequirement(name = "bearerAuth")
     @GetMapping("/profile")

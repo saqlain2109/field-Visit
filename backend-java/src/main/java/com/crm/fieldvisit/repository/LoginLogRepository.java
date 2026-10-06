@@ -38,6 +38,7 @@ public interface LoginLogRepository extends JpaRepository<LoginLog, Long> {
            "(:search IS NULL OR LOWER(l.email) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
            " LOWER(l.employeeName) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
            " LOWER(l.ipAddress) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+           " LOWER(l.country) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
            " LOWER(l.browser) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
            " LOWER(l.details) LIKE LOWER(CONCAT('%', :search, '%'))) AND " +
            "(:startDate IS NULL OR l.loginTimestamp >= :startDate) AND " +

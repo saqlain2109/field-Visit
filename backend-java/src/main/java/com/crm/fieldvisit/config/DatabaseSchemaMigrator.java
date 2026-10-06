@@ -44,6 +44,10 @@ public class DatabaseSchemaMigrator implements CommandLineRunner {
                     BEGIN
                         ALTER TABLE login_logs ADD session_id NVARCHAR(100) NULL;
                     END;
+                    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('login_logs') AND name = 'country')
+                    BEGIN
+                        ALTER TABLE login_logs ADD country NVARCHAR(50) NULL;
+                    END;
                     IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('login_logs') AND name = 'event_type')
                     BEGIN
                         ALTER TABLE login_logs ADD event_type NVARCHAR(50) NULL;
@@ -106,6 +110,76 @@ public class DatabaseSchemaMigrator implements CommandLineRunner {
                     BEGIN
                         ALTER TABLE employees ADD last_login_time DATETIME2 NULL;
                     END;
+                    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('employees') AND name = 'google_id')
+                    BEGIN
+                        ALTER TABLE employees ADD google_id NVARCHAR(100) NULL;
+                    END;
+                    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('employees') AND name = 'is_2fa_enabled')
+                    BEGIN
+                        ALTER TABLE employees ADD is_2fa_enabled BIT NOT NULL CONSTRAINT DF_employees_is_2fa_enabled DEFAULT 1;
+                    END;
+                    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('employees') AND name = 'is_region_restricted')
+                    BEGIN
+                        ALTER TABLE employees ADD is_region_restricted BIT NOT NULL CONSTRAINT DF_employees_is_region_restricted DEFAULT 0;
+                    END;
+                    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('employees') AND name = 'allowed_regions')
+                    BEGIN
+                        ALTER TABLE employees ADD allowed_regions NVARCHAR(200) NOT NULL CONSTRAINT DF_employees_allowed_regions DEFAULT 'IN';
+                    END;
+                    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('employees') AND name = 'allowed_latitude')
+                    BEGIN
+                        ALTER TABLE employees ADD allowed_latitude FLOAT NULL;
+                    END;
+                    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('employees') AND name = 'allowed_longitude')
+                    BEGIN
+                        ALTER TABLE employees ADD allowed_longitude FLOAT NULL;
+                    END;
+                    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('employees') AND name = 'allowed_radius_km')
+                    BEGIN
+                        ALTER TABLE employees ADD allowed_radius_km FLOAT NULL;
+                    END;
+                END
+            """);
+
+            // 4. Create trusted_devices table if missing
+            safeExecute("""
+                IF OBJECT_ID('trusted_devices', 'U') IS NULL
+                BEGIN
+                    CREATE TABLE trusted_devices (
+                        id BIGINT IDENTITY(1,1) PRIMARY KEY,
+                        employee_id INT NOT NULL,
+                        device_fingerprint NVARCHAR(255) NOT NULL,
+                        device_name NVARCHAR(150) NULL,
+                        browser NVARCHAR(100) NULL,
+                        operating_system NVARCHAR(100) NULL,
+                        ip_address NVARCHAR(64) NULL,
+                        created_at DATETIME2 DEFAULT SYSDATETIME(),
+                        last_used_at DATETIME2 NULL
+                    );
+                    CREATE INDEX IX_trusted_devices_emp_fp ON trusted_devices(employee_id, device_fingerprint);
+                END
+            """);
+
+            // 5. Create two_factor_verifications table if missing
+            safeExecute("""
+                IF OBJECT_ID('two_factor_verifications', 'U') IS NULL
+                BEGIN
+                    CREATE TABLE two_factor_verifications (
+                        id BIGINT IDENTITY(1,1) PRIMARY KEY,
+                        employee_id INT NOT NULL,
+                        verification_token NVARCHAR(100) NOT NULL UNIQUE,
+                        otp_code NVARCHAR(10) NOT NULL,
+                        device_fingerprint NVARCHAR(255) NULL,
+                        device_name NVARCHAR(150) NULL,
+                        login_method NVARCHAR(50) NULL,
+                        client_ip NVARCHAR(64) NULL,
+                        session_id NVARCHAR(100) NULL,
+                        is_new_user BIT DEFAULT 0,
+                        is_verified BIT DEFAULT 0,
+                        expires_at DATETIME2 NOT NULL,
+                        created_at DATETIME2 DEFAULT SYSDATETIME()
+                    );
+                    CREATE INDEX IX_2fa_token ON two_factor_verifications(verification_token);
                 END
             """);
 

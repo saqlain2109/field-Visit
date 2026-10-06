@@ -33,17 +33,13 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final CustomUserDetailsService userDetailsService;
-
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
+    private final PasswordEncoder passwordEncoder;
 
     @Bean
     public AuthenticationProvider authenticationProvider() {
         DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
         authProvider.setUserDetailsService(userDetailsService);
-        authProvider.setPasswordEncoder(passwordEncoder());
+        authProvider.setPasswordEncoder(passwordEncoder);
         return authProvider;
     }
 
@@ -60,7 +56,17 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/api/auth/login", "/api/auth/azure", "/api/auth/microsoft", "/api/auth/security-event", "/api/auth/lifecycle-event", "/api/auth/logout").permitAll()
+                        .requestMatchers(
+                                "/api/auth/login",
+                                "/api/auth/azure",
+                                "/api/auth/microsoft",
+                                "/api/auth/google",
+                                "/api/auth/verify-2fa",
+                                "/api/auth/resend-2fa",
+                                "/api/auth/security-event",
+                                "/api/auth/lifecycle-event",
+                                "/api/auth/logout"
+                        ).permitAll()
                         .requestMatchers("/api/health/**").permitAll()
                         .requestMatchers("/api/db/**").permitAll()
                         .requestMatchers("/api/docs", "/api/docs/**", "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()

@@ -199,6 +199,44 @@ public class EmailService {
         }
     }
 
+    /**
+     * Send 2-Factor Authentication (MFA) OTP verification code to user
+     */
+    public void sendTwoFactorOtpEmail(String toEmail, String userName, String otpCode, int expiryMinutes) {
+        try {
+            String subject = "🔑 Your 2-Step Verification Code: " + otpCode;
+            String safeName = userName != null ? userName : "User";
+
+            String htmlContent = "<!DOCTYPE html><html><head><style>"
+                    + "body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc; margin: 0; padding: 20px; color: #1e293b; }"
+                    + ".container { max-width: 500px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }"
+                    + ".header { background: #4f46e5; color: #ffffff; padding: 24px; text-align: center; }"
+                    + ".content { padding: 28px 24px; text-align: center; }"
+                    + ".otp-box { background: #f1f5f9; border: 2px dashed #cbd5e1; border-radius: 8px; padding: 16px; font-family: monospace; font-size: 32px; font-weight: 800; letter-spacing: 6px; color: #1e293b; margin: 20px auto; display: inline-block; }"
+                    + ".notice { color: #64748b; font-size: 13px; line-height: 1.5; margin-top: 20px; }"
+                    + ".footer { background: #f8fafc; padding: 14px 24px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; }"
+                    + "</style></head><body>"
+                    + "<div class=\"container\">"
+                    + "<div class=\"header\"><h2 style=\"margin:0; font-size: 22px;\">🔐 Two-Step Verification</h2><p style=\"margin: 4px 0 0 0; opacity: 0.9; font-size: 13px;\">Field Visit CRM Security</p></div>"
+                    + "<div class=\"content\">"
+                    + "<p style=\"font-size: 15px; margin-top: 0;\">Hello <strong>" + safeName + "</strong>,</p>"
+                    + "<p style=\"font-size: 14px; color: #475569;\">Use the one-time verification code below to complete your sign-in:</p>"
+                    + "<div class=\"otp-box\">" + otpCode + "</div>"
+                    + "<p class=\"notice\">This code will expire in <strong>" + expiryMinutes + " minutes</strong>.<br>If you did not initiate this login request, please contact your CRM administrator immediately.</p>"
+                    + "</div>"
+                    + "<div class=\"footer\">&copy; Field Visit Management CRM • Automated Security Notification</div>"
+                    + "</div></body></html>";
+
+            String plainText = "Hello " + safeName + ",\n\n"
+                    + "Your Field Visit CRM two-step verification code is: " + otpCode + "\n\n"
+                    + "This code is valid for " + expiryMinutes + " minutes. Do not share this code with anyone.\n";
+
+            sendEmail(toEmail, subject, htmlContent, plainText);
+        } catch (Exception e) {
+            log.error("Failed to send 2FA OTP email: {}", e.getMessage());
+        }
+    }
+
     private void logEmailSimulation(String to, String subject, String body) {
         log.info("""
                 ================================================================================

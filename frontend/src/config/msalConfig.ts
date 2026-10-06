@@ -1,10 +1,13 @@
-import { Configuration, PublicClientApplication, LogLevel } from '@azure/msal-browser';
+import { Configuration, PublicClientApplication, LogLevel, AuthenticationResult } from '@azure/msal-browser';
 
 export const getCurrentRedirectUri = (): string => {
+  if (import.meta.env.VITE_AZURE_REDIRECT_URI) {
+    return import.meta.env.VITE_AZURE_REDIRECT_URI;
+  }
   if (typeof window !== 'undefined' && window.location.origin) {
     return `${window.location.origin}/login`;
   }
-  return 'https://fieldvisit.iqraitacademy.com/login';
+  return 'http://localhost:3000/login';
 };
 
 // Microsoft Entra ID Configuration
@@ -47,3 +50,47 @@ export const loginRequest = {
 
 // Singleton instance of PublicClientApplication
 export const msalInstance = new PublicClientApplication(msalConfig);
+
+let msalInitPromise: Promise<AuthenticationResult | null> | null = null;
+
+/**
+ * Singleton initialization and redirect promise handler.
+ * Safe to call multiple times and resilient against React StrictMode double-mounts.
+ */
+export const initMsal = (): Promise<AuthenticationResult | null> => {
+  if (!msalInitPromise) {
+    msalInitPromise = (async () => {
+      try {
+        await msalInstance.initialize();
+        const res = await msalInstance.handleRedirectPromise();
+        return res;
+      } catch (err) {
+        console.warn('MSAL initialization/redirect error:', err);
+        return null;
+      }
+    })();
+  }
+  return msalInitPromise;
+};
+
+/**
+ * Clear any stale MSAL interaction locks
+ */
+export const clearMsalStorage = () => {
+  try {
+    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+      const key = sessionStorage.key(i);
+      if (key && (key.includes('msal') || key.includes('interaction') || key.includes('authority'))) {
+        sessionStorage.removeItem(key);
+      }
+    }
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (key && (key.includes('msal') || key.includes('interaction') || key.includes('authority') || key.includes('login.windows.net'))) {
+        localStorage.removeItem(key);
+      }
+    }
+  } catch (e) {
+    console.warn('Could not clear msal storage:', e);
+  }
+};

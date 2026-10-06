@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Component
@@ -329,12 +330,17 @@ public class DatabaseSeeder implements CommandLineRunner {
             }
 
             // 4. Sales Executive (shiva@crm.com & amit@crm.com)
-            for (String salesEmail : List.of("shiva@crm.com", "amit@crm.com")) {
+            List<Map<String, String>> salesList = List.of(
+                    Map.of("email", "shiva@crm.com", "name", "Shiva Sharma", "empNo", "1002"),
+                    Map.of("email", "amit@crm.com", "name", "Amit Sharma", "empNo", "1004")
+            );
+            for (Map<String, String> salesData : salesList) {
+                String salesEmail = salesData.get("email");
                 Optional<Employee> salesOpt = empRepo.findByEmail(salesEmail);
                 if (salesOpt.isEmpty()) {
                     empRepo.save(Employee.builder()
-                            .employeeNo("1002")
-                            .name(salesEmail.startsWith("shiva") ? "Shiva Sharma" : "Amit Sharma")
+                            .employeeNo(salesData.get("empNo"))
+                            .name(salesData.get("name"))
                             .gender("Male")
                             .dob(LocalDate.of(1992, 8, 22))
                             .departmentId(deptSales != null ? deptSales.getId() : 1)
@@ -363,12 +369,17 @@ public class DatabaseSeeder implements CommandLineRunner {
             }
 
             // 5. Branch Manager (manager.mumbai@crm.com & rajesh@crm.com)
-            for (String mgrEmail : List.of("manager.mumbai@crm.com", "rajesh@crm.com")) {
+            List<Map<String, String>> mgrList = List.of(
+                    Map.of("email", "manager.mumbai@crm.com", "name", "Rajesh Patel", "empNo", "1003"),
+                    Map.of("email", "rajesh@crm.com", "name", "Rajesh Patel", "empNo", "1005")
+            );
+            for (Map<String, String> mgrData : mgrList) {
+                String mgrEmail = mgrData.get("email");
                 Optional<Employee> mgrOpt = empRepo.findByEmail(mgrEmail);
                 if (mgrOpt.isEmpty()) {
                     empRepo.save(Employee.builder()
-                            .employeeNo("1003")
-                            .name("Rajesh Patel")
+                            .employeeNo(mgrData.get("empNo"))
+                            .name(mgrData.get("name"))
                             .gender("Male")
                             .dob(LocalDate.of(1982, 11, 5))
                             .departmentId(deptMgmt != null ? deptMgmt.getId() : 1)

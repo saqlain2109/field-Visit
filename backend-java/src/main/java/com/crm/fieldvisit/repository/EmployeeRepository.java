@@ -18,6 +18,8 @@ public interface EmployeeRepository extends JpaRepository<Employee, Integer> {
 
     Optional<Employee> findByAzureAdOid(String azureAdOid);
 
+    Optional<Employee> findByGoogleId(String googleId);
+
     @Query("SELECT e FROM Employee e WHERE LOWER(TRIM(e.email)) = LOWER(TRIM(:username)) OR LOWER(TRIM(e.employeeNo)) = LOWER(TRIM(:username))")
     Optional<Employee> findByEmailOrEmployeeNo(@Param("username") String username);
 

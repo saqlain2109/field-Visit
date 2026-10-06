@@ -50,4 +50,6 @@ public class MicrosoftLoginRequest {
      * Client browser profile ID
      */
     private String browserProfileId;
+    private Double latitude;
+    private Double longitude;
 }

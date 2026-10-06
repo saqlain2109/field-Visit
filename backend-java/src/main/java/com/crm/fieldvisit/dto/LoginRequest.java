@@ -26,6 +26,8 @@ public class LoginRequest {
     private String deviceFingerprint;
 
     private String browserProfileId;
+    private Double latitude;
+    private Double longitude;
 
     public String getIdentifier() {
         if (username != null && !username.isBlank()) {

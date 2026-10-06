@@ -211,6 +211,7 @@ export const MainLayout: React.FC = () => {
     { text: 'Customers', icon: <CustomersIcon />, path: '/customers', countKey: 'customers', roles: ['ADMIN', 'MANAGER', 'SALES_EXEC', 'SERVICE_ENG'] },
     { text: 'Contacts', icon: <ContactsIcon />, path: '/contacts', countKey: 'contacts', roles: ['ADMIN', 'MANAGER', 'SALES_EXEC', 'SERVICE_ENG'] },
     { text: 'Employees', icon: <EmployeesIcon />, path: '/employees', countKey: 'employees', roles: ['ADMIN', 'MANAGER'] },
+    { text: 'User & Geo Security', icon: <SecurityIcon />, path: '/user-management', roles: ['ADMIN'] },
     { text: 'Approvals Inbox', icon: <ApprovalsIcon />, path: '/approvals', countKey: 'approvals', highlight: true, roles: ['ADMIN', 'MANAGER'] },
     { text: 'Monthly Report', icon: <ReportsIcon />, path: '/reports/monthly', roles: ['ADMIN', 'MANAGER', 'SALES_EXEC', 'SERVICE_ENG'] },
     { text: 'Master Data Management', icon: <MastersIcon />, path: '/masters', roles: ['ADMIN'] },

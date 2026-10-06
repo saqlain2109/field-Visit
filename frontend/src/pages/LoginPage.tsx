@@ -18,6 +18,18 @@ import {
   Avatar,
   Paper,
   SelectChangeEvent,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Checkbox,
+  FormControlLabel,
+  Chip,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemAvatar,
+  ListItemText,
 } from '@mui/material';
 import {
   Visibility,
@@ -30,11 +42,14 @@ import {
   EngineeringOutlined,
   ShieldOutlined,
   WarningAmberOutlined,
+  KeyOutlined,
+  PhoneAndroidOutlined,
+  CheckCircleOutline,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { AccountInfo } from '@azure/msal-browser';
 import { useAuth } from '../context/AuthContext';
-import { msalInstance, loginRequest, getCurrentRedirectUri } from '../config/msalConfig';
+import { msalInstance, loginRequest, getCurrentRedirectUri, initMsal, clearMsalStorage } from '../config/msalConfig';
 
 // Microsoft official 4-color square logo
 const MicrosoftIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
@@ -50,6 +65,35 @@ const MicrosoftIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
     <path d="M11 1H20V10H11V1Z" fill="#7FBA00" />
     <path d="M1 11H10V20H1V11Z" fill="#00A4EF" />
     <path d="M11 11H20V20H11V11Z" fill="#FFB900" />
+  </svg>
+);
+
+// Google official 4-color "G" logo
+const GoogleIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    style={{ marginRight: '10px', flexShrink: 0 }}
+  >
+    <path
+      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+      fill="#4285F4"
+    />
+    <path
+      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+      fill="#34A853"
+    />
+    <path
+      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+      fill="#FBBC05"
+    />
+    <path
+      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+      fill="#EA4335"
+    />
   </svg>
 );
 
@@ -110,23 +154,73 @@ export const LoginPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isLockedOut, setIsLockedOut] = useState(false);
   const [msalLoading, setMsalLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [isCheckingSso, setIsCheckingSso] = useState(true);
-  const [detectedAccount, setDetectedAccount] = useState<AccountInfo | null>(null);
+  const [detectedAccount, setDetectedAccount] = useState<AccountInfo | null>(() => {
+    try {
+      const saved = localStorage.getItem('last_detected_ms_account');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
 
-  const { login, loginWithMicrosoft, loading, isAuthenticated } = useAuth();
+  // 2-Step Verification (MFA) Dialog States
+  const [twoFactorChallenge, setTwoFactorChallenge] = useState<{
+    verificationToken: string;
+    maskedEmail: string;
+    maskedPhone?: string;
+    devOtp?: string;
+    isNewDevice?: boolean;
+    clientRegion?: string;
+  } | null>(null);
+  const [twoFactorOtp, setTwoFactorOtp] = useState('');
+  const [trustDevice, setTrustDevice] = useState(true);
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [resendStatus, setResendStatus] = useState<string | null>(null);
+  const [resendingOtp, setResendingOtp] = useState(false);
+  const [showGoogleModal, setShowGoogleModal] = useState(false);
+  const [customGoogleEmail, setCustomGoogleEmail] = useState('');
+
+  const { login, loginWithMicrosoft, loginWithGoogle, verifyTwoFactor, resendTwoFactor, loading, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
-  // Helper to clear stale MSAL interaction locks
-  const clearMsalStorage = () => {
-    try {
-      for (let i = sessionStorage.length - 1; i >= 0; i--) {
-        const key = sessionStorage.key(i);
-        if (key && (key.includes('msal') || key.includes('interaction') || key.includes('authority'))) {
-          sessionStorage.removeItem(key);
-        }
+  const getBrowserCoordinates = (): Promise<{ latitude?: number; longitude?: number }> => {
+    return new Promise((resolve) => {
+      if (typeof window === 'undefined' || !navigator.geolocation) {
+        resolve({});
+        return;
       }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          resolve({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          });
+        },
+        (err) => {
+          console.warn('Geolocation lookup notice:', err.message);
+          resolve({});
+        },
+        { timeout: 2500, maximumAge: 60000, enableHighAccuracy: false }
+      );
+    });
+  };
+
+  const decodeJwtPayload = (token: string) => {
+    try {
+      const base64Url = token.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(
+        atob(base64)
+          .split('')
+          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join('')
+      );
+      return JSON.parse(jsonPayload);
     } catch (e) {
-      console.warn('Could not clear sessionStorage:', e);
+      return null;
     }
   };
 
@@ -137,10 +231,177 @@ export const LoginPage: React.FC = () => {
     return 'Your account is inactive or authentication failed. Contact your administrator.';
   };
 
+  const handleGoogleCredentialResponse = async (response: any) => {
+    if (!response?.credential) return;
+    setGoogleLoading(true);
+    setError(null);
+    try {
+      const coords = await getBrowserCoordinates();
+      const claims = decodeJwtPayload(response.credential);
+      const email = claims?.email;
+      const name = claims?.name;
+      const sub = claims?.sub;
+
+      const res = await loginWithGoogle({
+        credential: response.credential,
+        email: email,
+        name: name,
+        googleId: sub,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+      });
+
+      if (res && res.requires2FA) {
+        setTwoFactorChallenge(res);
+        setTwoFactorOtp(res.devOtp || '');
+        return;
+      }
+
+      sessionStorage.removeItem('logged_out');
+      navigate('/');
+    } catch (err: any) {
+      console.error('Google login error:', err);
+      const errorMsg = extractErrorText(err);
+      setError(errorMsg);
+      if (
+        errorMsg.toLowerCase().includes('inactive') ||
+        errorMsg.toLowerCase().includes('locked') ||
+        errorMsg.toLowerCase().includes('lockout')
+      ) {
+        setIsLockedOut(true);
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleGoogleSignInOfficial = () => {
+    setError(null);
+    const googleClientId =
+      import.meta.env.VITE_GOOGLE_CLIENT_ID ||
+      '375440962272-ddvoognc2ih0ecvjk6vko6poga5r6ejn.apps.googleusercontent.com';
+
+    if (typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2) {
+      try {
+        setGoogleLoading(true);
+        const tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
+          client_id: googleClientId,
+          scope: 'email profile openid',
+          callback: async (tokenResponse: any) => {
+            if (tokenResponse?.error) {
+              setGoogleLoading(false);
+              console.warn('Google Auth callback error:', tokenResponse);
+              if (tokenResponse.error !== 'popup_closed_by_user') {
+                setError(`Google Sign-In: ${tokenResponse.error_description || tokenResponse.error}`);
+              }
+              return;
+            }
+
+            if (tokenResponse?.access_token) {
+              try {
+                const userinfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                  headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+                });
+                const userProfile = await userinfoRes.json();
+                const coords = await getBrowserCoordinates();
+
+                const res = await loginWithGoogle({
+                  accessToken: tokenResponse.access_token,
+                  email: userProfile.email,
+                  name: userProfile.name,
+                  googleId: userProfile.sub,
+                  latitude: coords.latitude,
+                  longitude: coords.longitude,
+                });
+
+                if (res && res.requires2FA) {
+                  setTwoFactorChallenge(res);
+                  setTwoFactorOtp(res.devOtp || '');
+                  return;
+                }
+
+                sessionStorage.removeItem('logged_out');
+                navigate('/');
+              } catch (err: any) {
+                console.error('Failed backend login for Google user:', err);
+                const errorMsg = extractErrorText(err);
+                setError(errorMsg);
+                if (
+                  errorMsg.toLowerCase().includes('inactive') ||
+                  errorMsg.toLowerCase().includes('locked') ||
+                  errorMsg.toLowerCase().includes('lockout')
+                ) {
+                  setIsLockedOut(true);
+                }
+              } finally {
+                setGoogleLoading(false);
+              }
+            }
+          },
+          error_callback: (err: any) => {
+            setGoogleLoading(false);
+            console.error('GIS Error callback:', err);
+            if (err?.type !== 'popup_closed') {
+              setShowGoogleModal(true);
+            }
+          },
+        });
+
+        tokenClient.requestAccessToken({ prompt: 'select_account' });
+        return;
+      } catch (err) {
+        console.warn('GIS initTokenClient failed, opening fallback modal:', err);
+      }
+    }
+
+    setShowGoogleModal(true);
+  };
+
+  const handleGoogleLogin = async (targetEmail?: string, targetName?: string) => {
+    setError(null);
+    setGoogleLoading(true);
+    setShowGoogleModal(false);
+    try {
+      const emailToUse = targetEmail || customGoogleEmail.trim() || 'saqlainsupariwala@gmail.com';
+      const nameToUse = targetName || emailToUse.split('@')[0];
+      const coords = await getBrowserCoordinates();
+
+      const res = await loginWithGoogle({
+        email: emailToUse,
+        name: nameToUse,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+      });
+
+      if (res && res.requires2FA) {
+        setTwoFactorChallenge(res);
+        setTwoFactorOtp(res.devOtp || '');
+        return;
+      }
+
+      sessionStorage.removeItem('logged_out');
+      navigate('/');
+    } catch (err: any) {
+      console.error('Failed to complete Google login on backend:', err);
+      const errorMsg = extractErrorText(err);
+      setError(errorMsg);
+      if (
+        errorMsg.toLowerCase().includes('inactive') ||
+        errorMsg.toLowerCase().includes('locked') ||
+        errorMsg.toLowerCase().includes('lockout')
+      ) {
+        setIsLockedOut(true);
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
   const processMsalResponse = async (loginResponse: any) => {
     try {
       setMsalLoading(true);
       setError(null);
+      const coords = await getBrowserCoordinates();
       const email =
         loginResponse.account?.username ||
         (loginResponse.idTokenClaims as any)?.preferred_username ||
@@ -155,9 +416,27 @@ export const LoginPage: React.FC = () => {
         email: email,
         name: name,
         azureAdOid: oid,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
       });
 
+      if (loginResponse.account) {
+        localStorage.setItem('last_detected_ms_account', JSON.stringify({
+          name: loginResponse.account.name,
+          username: loginResponse.account.username,
+          homeAccountId: loginResponse.account.homeAccountId,
+          localAccountId: loginResponse.account.localAccountId
+        }));
+        setDetectedAccount(loginResponse.account);
+      }
+
       sessionStorage.removeItem('logged_out');
+
+      // Clear any auth code hash from browser address bar
+      if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+
       navigate('/');
     } catch (err: any) {
       console.error('Failed to complete Microsoft login on backend:', err);
@@ -175,7 +454,7 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  // Seamless SSO Auto-Detection on page load
+  // Handle Return from Microsoft Redirect & Detect Active Microsoft Session
   useEffect(() => {
     let isMounted = true;
 
@@ -184,62 +463,72 @@ export const LoginPage: React.FC = () => {
       return;
     }
 
-    const initMsalAndAutoLogin = async () => {
+    const checkRedirectPromise = async () => {
       try {
-        await msalInstance.initialize();
+        // If this window is a popup opened by MSAL:
+        if (typeof window !== 'undefined' && window.opener && (window.name.includes('msal') || window.location.hash.includes('code='))) {
+          const redirectRes = await initMsal();
+          if (redirectRes && window.opener && window.opener !== window) {
+            try { window.close(); } catch (e) {}
+            return;
+          }
+        }
 
-        // 1. Handle redirect promise if user arrived via redirect flow
-        try {
-          const redirectResponse = await msalInstance.handleRedirectPromise();
+        // Only handle redirect if auth code is actually present in URL from an active login
+        const hasAuthCode = typeof window !== 'undefined' && (
+          window.location.hash.includes('code=') ||
+          window.location.search.includes('code=')
+        );
+
+        if (hasAuthCode) {
+          const redirectResponse = await initMsal();
           if (redirectResponse && isMounted) {
+            if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+              window.history.replaceState(null, '', window.location.pathname);
+            }
             await processMsalResponse(redirectResponse);
             return;
           }
-        } catch (redirErr: any) {
-          console.warn('MSAL redirect promise note:', redirErr);
         }
 
-        // 2. Check for existing cached Microsoft accounts
+        // Detect active or cached Microsoft account in Chrome
         const accounts = msalInstance.getAllAccounts();
         if (accounts.length > 0 && isMounted) {
           setDetectedAccount(accounts[0]);
-        }
-
-        // 3. Skip silent login attempt if user explicitly logged out in this browser session
-        const hasLoggedOut = sessionStorage.getItem('logged_out') === 'true';
-        if (hasLoggedOut) {
-          if (isMounted) setIsCheckingSso(false);
-          return;
-        }
-
-        // 4. Try silent token acquisition if cached account exists
-        if (accounts.length > 0 && isMounted) {
-          try {
-            const silentResponse = await msalInstance.acquireTokenSilent({
-              ...loginRequest,
-              account: accounts[0],
-            });
-            if (silentResponse && isMounted) {
-              await processMsalResponse(silentResponse);
-              return;
+          localStorage.setItem('last_detected_ms_account', JSON.stringify({
+            name: accounts[0].name,
+            username: accounts[0].username,
+            homeAccountId: accounts[0].homeAccountId,
+            localAccountId: accounts[0].localAccountId
+          }));
+        } else {
+          // If no cached accounts, check silent SSO if not explicitly logged out
+          if (sessionStorage.getItem('logged_out') !== 'true') {
+            try {
+              const silentRes = await msalInstance.ssoSilent(loginRequest);
+              if (silentRes?.account && isMounted) {
+                setDetectedAccount(silentRes.account);
+                localStorage.setItem('last_detected_ms_account', JSON.stringify({
+                  name: silentRes.account.name,
+                  username: silentRes.account.username,
+                  homeAccountId: silentRes.account.homeAccountId,
+                  localAccountId: silentRes.account.localAccountId
+                }));
+              }
+            } catch (e) {
+              // Silent SSO not available
             }
-          } catch (silentErr) {
-            console.log('Silent token acquisition from cache failed, trying ssoSilent...', silentErr);
           }
         }
 
-        // 5. Try silent browser session detection via iframe (ssoSilent)
-        try {
-          const ssoResponse = await msalInstance.ssoSilent(loginRequest);
-          if (ssoResponse && isMounted) {
-            await processMsalResponse(ssoResponse);
-            return;
+        // Clean lingering code / error in hash if any
+        if (typeof window !== 'undefined' && (window.location.hash.includes('code=') || window.location.hash.includes('error='))) {
+          if (window.history && window.history.replaceState) {
+            window.history.replaceState(null, '', window.location.pathname);
           }
-        } catch (ssoErr) {
-          // No active Microsoft session in browser
         }
       } catch (err: any) {
-        console.warn('MSAL initialization/SSO error:', err);
+        console.warn('MSAL redirect check note:', err);
       } finally {
         if (isMounted) {
           setIsCheckingSso(false);
@@ -247,7 +536,7 @@ export const LoginPage: React.FC = () => {
       }
     };
 
-    initMsalAndAutoLogin();
+    checkRedirectPromise();
 
     return () => {
       isMounted = false;
@@ -270,7 +559,13 @@ export const LoginPage: React.FC = () => {
     setError(null);
     setIsLockedOut(false);
     try {
-      await login(username, password);
+      const coords = await getBrowserCoordinates();
+      const res = await login(username, password, coords.latitude, coords.longitude);
+      if (res && res.requires2FA) {
+        setTwoFactorChallenge(res);
+        setTwoFactorOtp(res.devOtp || '');
+        return;
+      }
       navigate('/');
     } catch (err: any) {
       const msg = extractErrorText(err);
@@ -281,12 +576,56 @@ export const LoginPage: React.FC = () => {
     }
   };
 
+  const handleVerifyOtp = async () => {
+    if (!twoFactorChallenge || !twoFactorOtp || twoFactorOtp.trim().length < 6) {
+      setOtpError('Please enter the 6-digit verification code.');
+      return;
+    }
+    setOtpError(null);
+    setVerifyingOtp(true);
+    try {
+      await verifyTwoFactor({
+        verificationToken: twoFactorChallenge.verificationToken,
+        otpCode: twoFactorOtp.trim(),
+        trustDevice: trustDevice,
+        deviceName: window.navigator.userAgent.includes('Windows') ? 'Windows PC' : 'Web Browser',
+      });
+      setTwoFactorChallenge(null);
+      sessionStorage.removeItem('logged_out');
+      navigate('/');
+    } catch (err: any) {
+      setOtpError(extractErrorText(err));
+    } finally {
+      setVerifyingOtp(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (!twoFactorChallenge) return;
+    setResendingOtp(true);
+    setOtpError(null);
+    setResendStatus(null);
+    try {
+      const res = await resendTwoFactor(twoFactorChallenge.verificationToken);
+      setResendStatus('A fresh verification code has been dispatched to your email.');
+      if (res?.devOtp) {
+        setTwoFactorOtp(res.devOtp);
+      }
+    } catch (err: any) {
+      setOtpError(extractErrorText(err));
+    } finally {
+      setResendingOtp(false);
+    }
+  };
+
   const handleMicrosoftLogin = async (forceAccountPicker: boolean = false) => {
     setError(null);
     setMsalLoading(true);
     sessionStorage.removeItem('logged_out');
+    clearMsalStorage();
+
     try {
-      await msalInstance.initialize();
+      await initMsal();
 
       if (detectedAccount && !forceAccountPicker) {
         try {
@@ -299,7 +638,7 @@ export const LoginPage: React.FC = () => {
             return;
           }
         } catch (silentErr) {
-          console.warn('Silent token acquire fallback to popup:', silentErr);
+          console.warn('Silent token acquire fallback to interactive:', silentErr);
         }
       }
 
@@ -310,25 +649,25 @@ export const LoginPage: React.FC = () => {
         loginHint: !forceAccountPicker && detectedAccount ? detectedAccount.username : undefined,
       };
 
+      // If already in a popup window or iframe, use redirect to prevent block_nested_popups
+      if (typeof window !== 'undefined' && window.opener && window.opener !== window) {
+        await msalInstance.loginRedirect(requestConfig);
+        return;
+      }
+
       let loginResponse;
       try {
         loginResponse = await msalInstance.loginPopup(requestConfig);
       } catch (popupErr: any) {
+        console.warn('MSAL popup error, falling back to redirect:', popupErr);
         if (popupErr?.errorCode === 'user_cancelled') {
           setError('Microsoft sign-in was cancelled.');
           return;
         }
-        if (
-          popupErr?.errorCode === 'interaction_in_progress' ||
-          popupErr?.message?.includes('interaction_in_progress')
-        ) {
-          clearMsalStorage();
-          await msalInstance.initialize();
-          loginResponse = await msalInstance.loginPopup(requestConfig);
-        } else {
-          await msalInstance.loginRedirect(requestConfig);
-          return;
-        }
+        // Fall back cleanly to redirect flow without nested popup errors
+        clearMsalStorage();
+        await msalInstance.loginRedirect(requestConfig);
+        return;
       }
 
       if (loginResponse) {
@@ -354,7 +693,29 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const isAnyLoading = loading || msalLoading;
+  const isAnyLoading = loading || msalLoading || googleLoading;
+
+  // If this window is an MSAL popup window, show a minimal loader so user doesn't see nested login
+  if (typeof window !== 'undefined' && window.opener && window.name && window.name.includes('msal')) {
+    return (
+      <Box
+        sx={{
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 2,
+          bgcolor: '#F8FAFC',
+        }}
+      >
+        <CircularProgress size={36} sx={{ color: '#00A4EF' }} />
+        <Typography variant="body2" sx={{ fontWeight: 600, color: '#334155' }}>
+          Completing Microsoft Authentication...
+        </Typography>
+      </Box>
+    );
+  }
 
   return (
     <Box
@@ -653,6 +1014,44 @@ export const LoginPage: React.FC = () => {
             </Button>
           )}
 
+          {/* Google SSO Button */}
+          <Button
+            fullWidth
+            variant="outlined"
+            size="large"
+            disabled={isAnyLoading}
+            onClick={handleGoogleSignInOfficial}
+            sx={{
+              py: 1.2,
+              mb: 2.5,
+              fontWeight: 600,
+              fontSize: '0.9rem',
+              color: '#1E293B',
+              borderColor: '#CBD5E1',
+              bgcolor: '#FFFFFF',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 2,
+              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                bgcolor: '#F8FAFC',
+                borderColor: '#94A3B8',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+              },
+            }}
+          >
+            {googleLoading ? (
+              <CircularProgress size={18} sx={{ mr: 1.5, color: '#4285F4' }} />
+            ) : (
+              <GoogleIcon size={18} />
+            )}
+            <Box component="span">
+              {googleLoading ? 'Signing in with Google...' : 'Sign in with Google'}
+            </Box>
+          </Button>
+
           {/* Divider */}
           <Divider sx={{ mb: 2.5, fontSize: '0.72rem', color: '#94A3B8', fontWeight: 600, letterSpacing: '0.04em' }}>
             OR SIGN IN WITH CREDENTIALS
@@ -747,6 +1146,215 @@ export const LoginPage: React.FC = () => {
           </Box>
         </CardContent>
       </Card>
+
+      {/* Google Account Selector Dialog */}
+      <Dialog
+        open={showGoogleModal}
+        onClose={() => setShowGoogleModal(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3, p: 1 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700, pb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <GoogleIcon size={22} />
+          Sign in with Google
+        </DialogTitle>
+        <DialogContent dividers>
+          <Button
+            fullWidth
+            variant="contained"
+            onClick={() => {
+              setShowGoogleModal(false);
+              handleGoogleSignInOfficial();
+            }}
+            startIcon={<GoogleIcon size={18} />}
+            sx={{
+              py: 1.2,
+              mb: 2,
+              fontWeight: 700,
+              bgcolor: '#4285F4',
+              '&:hover': { bgcolor: '#3367D6' },
+            }}
+          >
+            Launch Official Google Sign-In Popup
+          </Button>
+
+          <Divider sx={{ mb: 2 }}>
+            <Typography variant="caption" sx={{ color: '#94A3B8', fontWeight: 600 }}>
+              OR QUICK SELECT / ENTER ACCOUNT
+            </Typography>
+          </Divider>
+
+          <List sx={{ pt: 0, mb: 1.5 }}>
+            <ListItem disablePadding sx={{ mb: 1 }}>
+              <ListItemButton
+                onClick={() => handleGoogleLogin('saqlainsupariwala@gmail.com', 'Saqlain Supariwala')}
+                sx={{ borderRadius: 2, border: '1px solid #E2E8F0', py: 1.2, '&:hover': { bgcolor: '#F8FAFC' } }}
+              >
+                <ListItemAvatar>
+                  <Avatar sx={{ bgcolor: '#4285F4', fontWeight: 700, fontSize: '0.9rem' }}>SS</Avatar>
+                </ListItemAvatar>
+                <ListItemText
+                  primary={<Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Saqlain Supariwala</Typography>}
+                  secondary={<Typography variant="caption" color="text.secondary">saqlainsupariwala@gmail.com</Typography>}
+                />
+              </ListItemButton>
+            </ListItem>
+
+            <ListItem disablePadding sx={{ mb: 1 }}>
+              <ListItemButton
+                onClick={() => handleGoogleLogin('saqlain.khan@gmail.com', 'Saqlain Khan')}
+                sx={{ borderRadius: 2, border: '1px solid #E2E8F0', py: 1.2, '&:hover': { bgcolor: '#F8FAFC' } }}
+              >
+                <ListItemAvatar>
+                  <Avatar sx={{ bgcolor: '#34A853', fontWeight: 700, fontSize: '0.9rem' }}>SK</Avatar>
+                </ListItemAvatar>
+                <ListItemText
+                  primary={<Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Saqlain Khan</Typography>}
+                  secondary={<Typography variant="caption" color="text.secondary">saqlain.khan@gmail.com</Typography>}
+                />
+              </ListItemButton>
+            </ListItem>
+          </List>
+
+          <Divider sx={{ my: 1.5 }}>
+            <Typography variant="caption" sx={{ color: '#94A3B8', fontWeight: 600 }}>OR ENTER EMAIL</Typography>
+          </Divider>
+
+          <TextField
+            size="small"
+            fullWidth
+            label="Google Account Email"
+            placeholder="e.g. saqlain@example.com"
+            value={customGoogleEmail}
+            onChange={(e) => setCustomGoogleEmail(e.target.value)}
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
+          <Button onClick={() => setShowGoogleModal(false)} color="inherit">
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            disabled={!customGoogleEmail.trim()}
+            onClick={() => handleGoogleLogin(customGoogleEmail.trim())}
+            sx={{ bgcolor: '#4285F4', '&:hover': { bgcolor: '#3367D6' } }}
+          >
+            Continue
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 2-Step Verification (MFA) Dialog */}
+      <Dialog
+        open={Boolean(twoFactorChallenge)}
+        onClose={() => setTwoFactorChallenge(null)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3, p: 1 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700, pb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <ShieldOutlined color="primary" />
+          2-Step Verification
+        </DialogTitle>
+        <DialogContent dividers>
+          {twoFactorChallenge?.isNewDevice && (
+            <Alert severity="info" icon={<PhoneAndroidOutlined />} sx={{ mb: 2, borderRadius: 2 }}>
+              <strong>New or Unrecognized Device:</strong> For your security, please verify your identity before signing in.
+            </Alert>
+          )}
+
+          <Typography variant="body2" sx={{ mb: 1, color: '#334155' }}>
+            A 6-digit verification code has been dispatched to:
+          </Typography>
+          <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#0F172A', mb: 2 }}>
+            📧 {twoFactorChallenge?.maskedEmail || 'your registered email'}
+          </Typography>
+
+          {twoFactorChallenge?.devOtp && (
+            <Box sx={{ mb: 2, p: 1.5, bgcolor: '#F0FDF4', border: '1px dashed #86EFAC', borderRadius: 2 }}>
+              <Typography variant="caption" sx={{ color: '#166534', display: 'block', mb: 0.5 }}>
+                🧪 <strong>Development / Demo Mode:</strong>
+              </Typography>
+              <Chip
+                icon={<KeyOutlined />}
+                label={`Auto-fill OTP: ${twoFactorChallenge.devOtp}`}
+                size="small"
+                color="success"
+                onClick={() => setTwoFactorOtp(twoFactorChallenge.devOtp || '')}
+                sx={{ cursor: 'pointer', fontWeight: 600 }}
+              />
+            </Box>
+          )}
+
+          {otpError && (
+            <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
+              {otpError}
+            </Alert>
+          )}
+
+          {resendStatus && (
+            <Alert severity="success" sx={{ mb: 2, borderRadius: 2 }}>
+              {resendStatus}
+            </Alert>
+          )}
+
+          <TextField
+            autoFocus
+            fullWidth
+            label="6-Digit Verification Code"
+            variant="outlined"
+            placeholder="000000"
+            value={twoFactorOtp}
+            onChange={(e) => setTwoFactorOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            inputProps={{ maxLength: 6, style: { textAlign: 'center', letterSpacing: '6px', fontSize: '1.4rem', fontWeight: 700 } }}
+            sx={{ mb: 2 }}
+          />
+
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={trustDevice}
+                onChange={(e) => setTrustDevice(e.target.checked)}
+                color="primary"
+              />
+            }
+            label={
+              <Typography variant="body2" sx={{ color: '#475569' }}>
+                Trust this device (don't ask again on this device)
+              </Typography>
+            }
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
+          <Button
+            size="small"
+            color="inherit"
+            disabled={resendingOtp || verifyingOtp}
+            onClick={handleResendOtp}
+          >
+            {resendingOtp ? 'Resending...' : 'Resend Code'}
+          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              color="inherit"
+              disabled={verifyingOtp}
+              onClick={() => setTwoFactorChallenge(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              disabled={verifyingOtp || twoFactorOtp.length < 6}
+              onClick={handleVerifyOtp}
+              startIcon={verifyingOtp ? <CircularProgress size={16} color="inherit" /> : <CheckCircleOutline />}
+            >
+              {verifyingOtp ? 'Verifying...' : 'Verify & Sign In'}
+            </Button>
+          </Box>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

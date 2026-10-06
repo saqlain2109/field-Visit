@@ -97,7 +97,7 @@ export const DailyVisitsPage: React.FC = () => {
     departmentId: 2,
     branchId: user?.branchId || 1,
     customerId: 1,
-    contactId: 1,
+    contactId: null as number | null,
     activityTypeId: 1,
     productId: 10,
     placeFrom: 'Baroda',
@@ -215,7 +215,7 @@ export const DailyVisitsPage: React.FC = () => {
     setEditingVisitId(null);
     const firstCustId = customers[0]?.id || 1;
     let initialContacts: any = [];
-    let defaultContactId = 1;
+    let defaultContactId: number | null = null;
     try {
       initialContacts = await api.get(`/customers/${firstCustId}/contacts`);
       setContacts(initialContacts || []);
@@ -295,7 +295,7 @@ export const DailyVisitsPage: React.FC = () => {
       departmentId: visit.departmentId || visit.department?.id || 2,
       branchId: visit.branchId || visit.branch?.id || user?.branchId || 1,
       customerId: targetCustId,
-      contactId: visit.contactId || visit.contact?.id || 1,
+      contactId: visit.contactId || visit.contact?.id || null,
       activityTypeId: visit.activityTypeId || visit.activityType?.id || 1,
       productId: visit.productId || visit.product?.id || 10,
       placeFrom: visit.placeFrom || 'Baroda',
@@ -325,7 +325,7 @@ export const DailyVisitsPage: React.FC = () => {
   };
 
   const handleCustomerChange = async (custVal: number) => {
-    setFormData((prev: any) => ({ ...prev, customerId: custVal }));
+    setFormData((prev: any) => ({ ...prev, customerId: custVal, contactId: null }));
     try {
       const cList: any = await api.get(`/customers/${custVal}/contacts`);
       setContacts(cList || []);
@@ -570,6 +570,7 @@ export const DailyVisitsPage: React.FC = () => {
 
       const payload = {
         ...formData,
+        contactId: formData.contactId ? Number(formData.contactId) : null,
         startTime: isoStart,
         endTime: isoEnd,
       };
@@ -1349,17 +1350,16 @@ export const DailyVisitsPage: React.FC = () => {
               select
               fullWidth
               size="small"
-              label="Contact Person *"
-              value={formData.contactId}
-              onChange={(e) => setFormData({ ...formData, contactId: Number(e.target.value) })}
+              label="Contact Person"
+              value={formData.contactId ?? ''}
+              onChange={(e) => setFormData({ ...formData, contactId: e.target.value ? Number(e.target.value) : null })}
             >
-              {contacts.length === 0 ? (
-                <MenuItem value={1}>Vijay Patel</MenuItem>
-              ) : (
-                contacts.map((cnt) => (
-                  <MenuItem key={cnt.id} value={cnt.id}>{cnt.contactName}</MenuItem>
-                ))
-              )}
+              <MenuItem value="">
+                <em>-- Select Contact (Optional) --</em>
+              </MenuItem>
+              {contacts.map((cnt) => (
+                <MenuItem key={cnt.id} value={cnt.id}>{cnt.contactName}</MenuItem>
+              ))}
             </TextField>
           </Grid>
           <Grid item xs={12} md={6}>

@@ -55,4 +55,17 @@ public class CreateEmployeeRequest {
 
     @Builder.Default
     private String grade = "GRADE_B";
+
+    @Builder.Default
+    private Boolean is2faEnabled = true;
+
+    @Builder.Default
+    private Boolean isRegionRestricted = false;
+
+    @Builder.Default
+    private String allowedRegions = "IN";
+
+    private Double allowedLatitude;
+    private Double allowedLongitude;
+    private Double allowedRadiusKm;
 }

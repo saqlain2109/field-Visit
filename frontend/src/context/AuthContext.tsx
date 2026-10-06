@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../services/api';
 import { generateDeviceFingerprint, getBrowserProfileId } from '../utils/deviceFingerprint';
+import { clearMsalStorage } from '../config/msalConfig';
 
 export interface User {
   id: number;
@@ -42,8 +43,11 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   sessionId: string | null;
-  login: (username: string, password: string) => Promise<void>;
-  loginWithMicrosoft: (payload: MicrosoftAuthPayload) => Promise<any>;
+  login: (username: string, password: string, latitude?: number, longitude?: number) => Promise<any>;
+  loginWithMicrosoft: (payload: MicrosoftAuthPayload & { latitude?: number; longitude?: number }) => Promise<any>;
+  loginWithGoogle: (payload: { credential?: string; accessToken?: string; email?: string; name?: string; googleId?: string; latitude?: number; longitude?: number }) => Promise<any>;
+  verifyTwoFactor: (payload: { verificationToken: string; otpCode: string; trustDevice?: boolean; deviceName?: string }) => Promise<any>;
+  resendTwoFactor: (verificationToken: string) => Promise<any>;
   setPassword: (password: string) => Promise<void>;
   logout: () => Promise<void>;
   getActiveSessions: () => Promise<ActiveSession[]>;
@@ -86,7 +90,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [token]);
 
-  const login = async (username: string, password: string) => {
+  const login = async (username: string, password: string, latitude?: number, longitude?: number) => {
     setLoading(true);
     try {
       const fingerprint = generateDeviceFingerprint();
@@ -97,7 +101,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         password,
         deviceFingerprint: fingerprint,
         browserProfileId: profileId,
+        latitude,
+        longitude,
       });
+
+      if (res && res.requires2FA) {
+        return res;
+      }
 
       const { accessToken, token: fallbackToken, sessionId: sid, user: userData } = res;
       const validToken = accessToken || fallbackToken;
@@ -110,6 +120,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (sid) localStorage.setItem('sessionId', sid);
       localStorage.setItem('user', JSON.stringify(userData));
       sessionStorage.removeItem('logged_out');
+      return res;
     } finally {
       setLoading(false);
     }
@@ -125,6 +136,72 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ...payload,
         deviceFingerprint: fingerprint,
         browserProfileId: profileId,
+      });
+
+      if (res && res.requires2FA) {
+        return res;
+      }
+
+      const { accessToken, token: fallbackToken, sessionId: sid, user: userData, autoProvisioned } = res;
+      const validToken = accessToken || fallbackToken;
+
+      setToken(validToken);
+      setSessionId(sid || null);
+      setUser(userData);
+
+      localStorage.setItem('token', validToken);
+      if (sid) localStorage.setItem('sessionId', sid);
+      localStorage.setItem('user', JSON.stringify(userData));
+      sessionStorage.removeItem('logged_out');
+
+      return { autoProvisioned, user: userData };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loginWithGoogle = async (payload: { credential?: string; email?: string; name?: string; googleId?: string; latitude?: number; longitude?: number }) => {
+    setLoading(true);
+    try {
+      const fingerprint = generateDeviceFingerprint();
+      const profileId = getBrowserProfileId();
+
+      const res: any = await api.post('/auth/google', {
+        ...payload,
+        deviceFingerprint: fingerprint,
+        browserProfileId: profileId,
+      });
+
+      if (res && res.requires2FA) {
+        return res;
+      }
+
+      const { accessToken, token: fallbackToken, sessionId: sid, user: userData, autoProvisioned } = res;
+      const validToken = accessToken || fallbackToken;
+
+      setToken(validToken);
+      setSessionId(sid || null);
+      setUser(userData);
+
+      localStorage.setItem('token', validToken);
+      if (sid) localStorage.setItem('sessionId', sid);
+      localStorage.setItem('user', JSON.stringify(userData));
+      sessionStorage.removeItem('logged_out');
+
+      return { autoProvisioned, user: userData };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyTwoFactor = async (payload: { verificationToken: string; otpCode: string; trustDevice?: boolean; deviceName?: string }) => {
+    setLoading(true);
+    try {
+      const fingerprint = generateDeviceFingerprint();
+
+      const res: any = await api.post('/auth/verify-2fa', {
+        ...payload,
+        deviceFingerprint: fingerprint,
       });
 
       const { accessToken, token: fallbackToken, sessionId: sid, user: userData, autoProvisioned } = res;
@@ -143,6 +220,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setLoading(false);
     }
+  };
+
+  const resendTwoFactor = async (verificationToken: string) => {
+    const res: any = await api.post('/auth/resend-2fa', { verificationToken });
+    return res;
   };
 
   const setPassword = async (newPassword: string) => {
@@ -168,6 +250,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.removeItem('sessionId');
       localStorage.removeItem('user');
       sessionStorage.setItem('logged_out', 'true');
+      clearMsalStorage();
     }
   };
 
@@ -239,6 +322,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         sessionId,
         login,
         loginWithMicrosoft,
+        loginWithGoogle,
+        verifyTwoFactor,
+        resendTwoFactor,
         setPassword,
         logout,
         getActiveSessions,

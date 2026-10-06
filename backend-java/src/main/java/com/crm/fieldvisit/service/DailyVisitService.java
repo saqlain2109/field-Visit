@@ -4,12 +4,14 @@ import com.crm.fieldvisit.common.ResourceNotFoundException;
 import com.crm.fieldvisit.dto.ApprovalActionRequest;
 import com.crm.fieldvisit.dto.DailyVisitRequest;
 import com.crm.fieldvisit.dto.VisitExpenseRequest;
+import com.crm.fieldvisit.entity.Contact;
 import com.crm.fieldvisit.entity.Customer;
 import com.crm.fieldvisit.entity.DailyVisit;
 import com.crm.fieldvisit.entity.Employee;
 import com.crm.fieldvisit.entity.ExpenseHead;
 import com.crm.fieldvisit.entity.VisitCustomer;
 import com.crm.fieldvisit.entity.VisitExpense;
+import com.crm.fieldvisit.repository.ContactRepository;
 import com.crm.fieldvisit.repository.CustomerRepository;
 import com.crm.fieldvisit.repository.DailyVisitRepository;
 import com.crm.fieldvisit.repository.EmployeeRepository;
@@ -36,6 +38,7 @@ public class DailyVisitService {
     private final EmployeeRepository employeeRepository;
     private final ExpenseHeadRepository expenseHeadRepository;
     private final CustomerRepository customerRepository;
+    private final ContactRepository contactRepository;
 
     @Transactional(readOnly = true)
     public List<DailyVisit> findAll(Integer employeeId, Integer branchId, String status, String startDate, String endDate) {
@@ -84,13 +87,24 @@ public class DailyVisitService {
         Integer deptId = request.getDepartmentId() != null ? request.getDepartmentId() : employee.getDepartmentId();
         Integer branchId = request.getBranchId() != null ? request.getBranchId() : employee.getBranchId();
 
+        Integer resolvedContactId = request.getContactId();
+        if (resolvedContactId != null && (resolvedContactId <= 0 || !contactRepository.existsById(resolvedContactId))) {
+            resolvedContactId = (request.getCustomerId() != null)
+                    ? contactRepository.findByCustomerId(request.getCustomerId())
+                        .stream().findFirst().map(Contact::getId).orElse(null)
+                    : null;
+        } else if (resolvedContactId == null && request.getCustomerId() != null) {
+            resolvedContactId = contactRepository.findByCustomerId(request.getCustomerId())
+                    .stream().findFirst().map(Contact::getId).orElse(null);
+        }
+
         DailyVisit visit = DailyVisit.builder()
                 .visitDate(request.getVisitDate())
                 .employeeId(employee.getId())
                 .departmentId(deptId)
                 .branchId(branchId)
                 .customerId(request.getCustomerId())
-                .contactId(request.getContactId())
+                .contactId(resolvedContactId)
                 .activityTypeId(request.getActivityTypeId())
                 .productId(request.getProductId())
                 .placeFrom(request.getPlaceFrom())
@@ -133,11 +147,15 @@ public class DailyVisitService {
                 Customer cust = vcReq.getCustomerId() != null 
                         ? customerRepository.findById(vcReq.getCustomerId()).orElse(null) 
                         : null;
+                Integer extContactId = vcReq.getContactId();
+                if (extContactId != null && (extContactId <= 0 || !contactRepository.existsById(extContactId))) {
+                    extContactId = null;
+                }
                 VisitCustomer vc = VisitCustomer.builder()
                         .visit(visit)
                         .customerId(vcReq.getCustomerId())
                         .customer(cust)
-                        .contactId(vcReq.getContactId())
+                        .contactId(extContactId)
                         .sequenceNo(vcReq.getSequenceNo() != null ? vcReq.getSequenceNo() : 1)
                         .build();
                 visit.getExtensibleCustomers().add(vc);
@@ -153,7 +171,16 @@ public class DailyVisitService {
 
         if (request.getVisitDate() != null) visit.setVisitDate(request.getVisitDate());
         if (request.getCustomerId() != null) visit.setCustomerId(request.getCustomerId());
-        if (request.getContactId() != null) visit.setContactId(request.getContactId());
+        
+        Integer updateContactId = request.getContactId();
+        if (updateContactId != null && (updateContactId <= 0 || !contactRepository.existsById(updateContactId))) {
+            updateContactId = (request.getCustomerId() != null)
+                    ? contactRepository.findByCustomerId(request.getCustomerId())
+                        .stream().findFirst().map(Contact::getId).orElse(null)
+                    : null;
+        }
+        visit.setContactId(updateContactId);
+
         if (request.getActivityTypeId() != null) visit.setActivityTypeId(request.getActivityTypeId());
         if (request.getProductId() != null) visit.setProductId(request.getProductId());
         if (request.getPlaceFrom() != null) visit.setPlaceFrom(request.getPlaceFrom());
@@ -197,11 +224,15 @@ public class DailyVisitService {
                 Customer cust = vcReq.getCustomerId() != null 
                         ? customerRepository.findById(vcReq.getCustomerId()).orElse(null) 
                         : null;
+                Integer extContactId = vcReq.getContactId();
+                if (extContactId != null && (extContactId <= 0 || !contactRepository.existsById(extContactId))) {
+                    extContactId = null;
+                }
                 VisitCustomer vc = VisitCustomer.builder()
                         .visit(visit)
                         .customerId(vcReq.getCustomerId())
                         .customer(cust)
-                        .contactId(vcReq.getContactId())
+                        .contactId(extContactId)
                         .sequenceNo(vcReq.getSequenceNo() != null ? vcReq.getSequenceNo() : 1)
                         .build();
                 visit.getExtensibleCustomers().add(vc);

@@ -65,6 +65,7 @@ services:
       DB_NAME: "${DB_NAME:-field_visit}"
       DB_USER: "sa"
       DB_PASSWORD: "${DB_PASSWORD:-FieldCRM@Secure2026!}"
+      SPRING_DATASOURCE_URL: "jdbc:sqlserver://sqlserver:1433;databaseName=${DB_NAME:-field_visit};encrypt=true;trustServerCertificate=true;"
       SERVER_PORT: "4000"
       JWT_SECRET: "${JWT_SECRET:-EnterpriseFieldVisitCRMSecureProductionKey2026EnterpriseFieldVisitCRMSecretKey2026!}"
       JWT_EXPIRATION_MS: "${JWT_EXPIRATION_MS:-86400000}"

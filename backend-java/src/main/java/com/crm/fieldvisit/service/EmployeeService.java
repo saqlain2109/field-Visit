@@ -57,6 +57,12 @@ public class EmployeeService {
                 .passwordHash(passwordEncoder.encode(rawPassword))
                 .role(request.getRole() != null ? request.getRole() : "SERVICE_ENG")
                 .grade(request.getGrade() != null ? request.getGrade() : "GRADE_B")
+                .is2faEnabled(request.getIs2faEnabled() != null ? request.getIs2faEnabled() : true)
+                .isRegionRestricted(request.getIsRegionRestricted() != null ? request.getIsRegionRestricted() : false)
+                .allowedRegions(request.getAllowedRegions() != null && !request.getAllowedRegions().isBlank() ? request.getAllowedRegions() : "IN")
+                .allowedLatitude(request.getAllowedLatitude())
+                .allowedLongitude(request.getAllowedLongitude())
+                .allowedRadiusKm(request.getAllowedRadiusKm() != null ? request.getAllowedRadiusKm() : 25.0)
                 .createdBy("SYSTEM")
                 .updatedBy("SYSTEM")
                 .build();
@@ -81,6 +87,12 @@ public class EmployeeService {
         if (request.getEmail() != null) emp.setEmail(request.getEmail());
         if (request.getRole() != null) emp.setRole(request.getRole());
         if (request.getGrade() != null) emp.setGrade(request.getGrade());
+        if (request.getIs2faEnabled() != null) emp.setIs2faEnabled(request.getIs2faEnabled());
+        if (request.getIsRegionRestricted() != null) emp.setIsRegionRestricted(request.getIsRegionRestricted());
+        if (request.getAllowedRegions() != null) emp.setAllowedRegions(request.getAllowedRegions());
+        if (request.getAllowedLatitude() != null) emp.setAllowedLatitude(request.getAllowedLatitude());
+        if (request.getAllowedLongitude() != null) emp.setAllowedLongitude(request.getAllowedLongitude());
+        if (request.getAllowedRadiusKm() != null) emp.setAllowedRadiusKm(request.getAllowedRadiusKm());
         if (request.getPassword() != null && !request.getPassword().isBlank()) {
             emp.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         }

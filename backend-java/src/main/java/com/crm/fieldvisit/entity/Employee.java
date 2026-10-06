@@ -75,6 +75,30 @@ public class Employee {
     @Column(name = "azure_ad_oid", length = 100)
     private String azureAdOid;
 
+    @Column(name = "google_id", length = 100)
+    private String googleId;
+
+    @Column(name = "is_2fa_enabled")
+    @Builder.Default
+    private Boolean is2faEnabled = true;
+
+    @Column(name = "is_region_restricted")
+    @Builder.Default
+    private Boolean isRegionRestricted = false;
+
+    @Column(name = "allowed_regions", length = 200)
+    @Builder.Default
+    private String allowedRegions = "IN";
+
+    @Column(name = "allowed_latitude")
+    private Double allowedLatitude;
+
+    @Column(name = "allowed_longitude")
+    private Double allowedLongitude;
+
+    @Column(name = "allowed_radius_km")
+    private Double allowedRadiusKm;
+
     @JsonIgnore
     @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;

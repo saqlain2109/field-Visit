@@ -61,11 +61,16 @@ temp/
 Thumbs.db
 desktop.ini
 
+# Binaries
+*.dll
+*.exe
+
 # Mobile / Flutter
 mobile/.dart_tool/
 mobile/.flutter-plugins
 mobile/.flutter-plugins-dependencies
 mobile/.packages
 Enterprise Field Visit & CRM System.pdf
-.gitignore
 Proposal for Field Visit Management Application - Hindustan Export & Import Corporation Pvt. Ltd. Ver.3 5.pdf
+clear_logs.ps1
+test_flows.ps1

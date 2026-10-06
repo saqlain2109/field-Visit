@@ -45,6 +45,10 @@ public class LoginLog {
     @Builder.Default
     private String ipAddress = "127.0.0.1";
 
+    @Column(length = 50)
+    @Builder.Default
+    private String country = "India";
+
     @Column(length = 100)
     @Builder.Default
     private String browser = "Unknown";
