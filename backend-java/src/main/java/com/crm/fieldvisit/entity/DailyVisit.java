@@ -99,13 +99,13 @@ public class DailyVisit {
     @Builder.Default
     private String status = "DRAFT";
 
-    @Column(name = "rejection_reason", columnDefinition = "NVARCHAR(MAX)")
+    @Column(name = "rejection_reason", length = 4000)
     private String rejectionReason;
 
     @Column(name = "sales_report_url", length = 550)
     private String salesReportUrl;
 
-    @Column(name = "sales_report_notes", columnDefinition = "NVARCHAR(MAX)")
+    @Column(name = "sales_report_notes", length = 4000)
     private String salesReportNotes;
 
     @Column(name = "approved_by")

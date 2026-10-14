@@ -35,7 +35,7 @@ public class OpportunityFollowUp {
     @Column(name = "followup_date", nullable = false)
     private LocalDate followUpDate;
 
-    @Column(columnDefinition = "NVARCHAR(MAX)")
+    @Column(length = 4000)
     private String notes;
 
     @Column(name = "next_action", length = 150)

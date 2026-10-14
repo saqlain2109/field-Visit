@@ -92,10 +92,10 @@ public class Quotation {
     @Builder.Default
     private String status = "DRAFT"; // DRAFT, SENT, ACCEPTED, REJECTED, REVISED
 
-    @Column(name = "terms_and_conditions", columnDefinition = "NVARCHAR(MAX)")
+    @Column(name = "terms_and_conditions", length = 4000)
     private String termsAndConditions;
 
-    @Column(columnDefinition = "NVARCHAR(MAX)")
+    @Column(length = 4000)
     private String notes;
 
     @Column(name = "salesperson_id")

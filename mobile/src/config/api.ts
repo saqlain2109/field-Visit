@@ -15,9 +15,9 @@ export const normalizeApiUrl = (raw: string): string => {
   return clean;
 };
 
-// Automatically choose best initial default (Public Cloud URL accessible everywhere on 4G/5G)
+// Automatically choose best initial default (Permanent Cloud URL on Render)
 export const getDefaultApiUrl = (): string => {
-  return 'https://tel-consists-layers-night.trycloudflare.com/api';
+  return 'https://field-visit-backend-8byt.onrender.com/api';
 };
 
 let currentApiUrl = getDefaultApiUrl();

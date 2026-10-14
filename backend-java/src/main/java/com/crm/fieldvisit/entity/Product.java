@@ -29,7 +29,7 @@ public class Product {
     @Column(nullable = false, length = 150)
     private String name;
 
-    @Column(columnDefinition = "NVARCHAR(MAX)")
+    @Column(length = 4000)
     private String description;
 
     @Column(nullable = false, length = 100)

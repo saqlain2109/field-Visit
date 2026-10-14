@@ -26,6 +26,7 @@ import {
   Switch,
   FormControlLabel,
   Divider,
+  Paper,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -143,11 +144,13 @@ export const UserManagementPage: React.FC = () => {
   const handleSaveUserRole = async () => {
     if (!editingUser) return;
     try {
+      const latVal = formData.allowedLatitude !== '' && formData.allowedLatitude !== null ? Number(formData.allowedLatitude) : null;
+      const lonVal = formData.allowedLongitude !== '' && formData.allowedLongitude !== null ? Number(formData.allowedLongitude) : null;
       const payload = {
         ...formData,
-        allowedLatitude: formData.allowedLatitude !== '' ? Number(formData.allowedLatitude) : null,
-        allowedLongitude: formData.allowedLongitude !== '' ? Number(formData.allowedLongitude) : null,
-        allowedRadiusKm: formData.allowedRadiusKm !== '' ? Number(formData.allowedRadiusKm) : 25,
+        allowedLatitude: latVal,
+        allowedLongitude: lonVal,
+        allowedRadiusKm: formData.allowedRadiusKm !== '' && formData.allowedRadiusKm !== null ? Number(formData.allowedRadiusKm) : 25,
       };
       await api.put(`/employees/${editingUser.id}`, payload);
       setOpenModal(false);
@@ -546,7 +549,7 @@ export const UserManagementPage: React.FC = () => {
                           onChange={(e) => setFormData({ ...formData, allowedRadiusKm: e.target.value })}
                         />
                       </Grid>
-                      <Grid item xs={12}>
+                      <Grid item xs={12} sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
                         <Button
                           variant="outlined"
                           size="small"
@@ -556,11 +559,135 @@ export const UserManagementPage: React.FC = () => {
                         >
                           📍 Detect & Set Current GPS Coordinates
                         </Button>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                          If coordinates are set, the employee will only be permitted to log in within the specified radius of this location.
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          color="inherit"
+                          onClick={() => setFormData((prev) => ({ ...prev, allowedLatitude: '', allowedLongitude: '', allowedRadiusKm: 25 }))}
+                          sx={{ textTransform: 'none', fontWeight: 600 }}
+                        >
+                          🗑️ Clear Coordinates (Country Only)
+                        </Button>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', width: '100%', mt: 0.5 }}>
+                          If coordinates are set, the employee will only be permitted to log in within the specified radius of this location. If blank, only Country restriction will be enforced.
                         </Typography>
                       </Grid>
                     </Grid>
+
+                    {/* Live Geo-Fence Visual Map */}
+                    {formData.allowedLatitude !== '' &&
+                    formData.allowedLongitude !== '' &&
+                    !isNaN(Number(formData.allowedLatitude)) &&
+                    !isNaN(Number(formData.allowedLongitude)) ? (
+                      <Paper
+                        elevation={0}
+                        sx={{
+                          p: 1.5,
+                          borderRadius: 2.5,
+                          border: '1px solid #CBD5E1',
+                          bgcolor: '#F8FAFC',
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5, flexWrap: 'wrap', gap: 1 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1E293B' }}>
+                              🗺️ Authorized Work Zone Radius Preview ({formData.allowedRadiusKm || 25} km)
+                            </Typography>
+                            <Chip
+                              label={`${Number(formData.allowedLatitude).toFixed(4)}°, ${Number(formData.allowedLongitude).toFixed(4)}°`}
+                              size="small"
+                              color="primary"
+                              variant="outlined"
+                              sx={{ fontWeight: 600, fontSize: '0.72rem' }}
+                            />
+                          </Box>
+                          <Button
+                            size="small"
+                            variant="text"
+                            component="a"
+                            href={`https://www.google.com/maps/search/?api=1&query=${formData.allowedLatitude},${formData.allowedLongitude}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            sx={{ fontSize: '0.75rem', textTransform: 'none', fontWeight: 600 }}
+                          >
+                            Open in Google Maps ↗
+                          </Button>
+                        </Box>
+
+                        {/* Interactive Leaflet Map with Real Geo-Fence Circle Overlay */}
+                        <Box
+                          sx={{
+                            width: '100%',
+                            height: 250,
+                            borderRadius: 2,
+                            overflow: 'hidden',
+                            border: '1px solid #E2E8F0',
+                            position: 'relative',
+                          }}
+                        >
+                          <iframe
+                            title="Geo-Fence Range Map"
+                            width="100%"
+                            height="100%"
+                            style={{ border: 0 }}
+                            srcDoc={`
+                              <!DOCTYPE html>
+                              <html>
+                                <head>
+                                  <meta charset="utf-8" />
+                                  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+                                  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+                                  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+                                  <style>
+                                    html, body, #map { margin: 0; padding: 0; height: 100%; width: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+                                    .leaflet-popup-content-wrapper { border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+                                  </style>
+                                </head>
+                                <body>
+                                  <div id="map"></div>
+                                  <script>
+                                    var lat = ${Number(formData.allowedLatitude)};
+                                    var lon = ${Number(formData.allowedLongitude)};
+                                    var radiusKm = ${Number(formData.allowedRadiusKm) || 25};
+                                    var radiusMeters = radiusKm * 1000;
+
+                                    var map = L.map('map', { zoomControl: true }).setView([lat, lon], 10);
+                                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                                      attribution: '© <a href="https://www.openstreetmap.org/">OpenStreetMap</a>'
+                                    }).addTo(map);
+
+                                    // Add Allowed Work Zone Geofence Circle
+                                    var circle = L.circle([lat, lon], {
+                                      color: '#4F46E5',
+                                      fillColor: '#6366F1',
+                                      fillOpacity: 0.22,
+                                      weight: 2,
+                                      radius: radiusMeters
+                                    }).addTo(map);
+
+                                    // Add Center Marker
+                                    var marker = L.marker([lat, lon]).addTo(map);
+                                    marker.bindPopup('<b>Authorized Work Zone</b><br>Radius: ' + radiusKm + ' km<br>Center: ' + lat.toFixed(4) + ', ' + lon.toFixed(4)).openPopup();
+
+                                    // Fit map viewport to circle boundaries
+                                    map.fitBounds(circle.getBounds(), { padding: [15, 15] });
+                                  </script>
+                                </body>
+                              </html>
+                            `}
+                          />
+                        </Box>
+                        <Typography variant="caption" sx={{ color: '#64748B', display: 'block', mt: 1, fontSize: '0.72rem' }}>
+                          📍 The shaded circle shows the exact physical boundary ({formData.allowedRadiusKm || 25} km radius) wherein this employee is authorized to sign in. Logins from outside this radius will be rejected.
+                        </Typography>
+                      </Paper>
+                    ) : (
+                      <Box sx={{ p: 1.5, bgcolor: '#F1F5F9', borderRadius: 2, border: '1px dashed #CBD5E1' }}>
+                        <Typography variant="caption" color="text.secondary">
+                          ℹ️ No GPS coordinates configured yet. This user is governed by Country ISO restriction ({formData.allowedRegions || 'IN'}). To configure an exact GPS perimeter with visual map view, enter Latitude & Longitude or click <strong>"Detect & Set Current GPS Coordinates"</strong>.
+                        </Typography>
+                      </Box>
+                    )}
                   </Box>
                 )}
               </Box>

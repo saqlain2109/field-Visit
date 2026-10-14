@@ -54,7 +54,7 @@ public class Opportunity {
     @Column(name = "lead_source", length = 100)
     private String leadSource;
 
-    @Column(columnDefinition = "NVARCHAR(MAX)")
+    @Column(length = 4000)
     private String requirement;
 
     @Column(length = 100)
@@ -109,17 +109,17 @@ public class Opportunity {
     @Column(name = "competitor_price", precision = 14, scale = 2)
     private BigDecimal competitorPrice;
 
-    @Column(name = "competitor_strengths", columnDefinition = "NVARCHAR(MAX)")
+    @Column(name = "competitor_strengths", length = 4000)
     private String competitorStrengths;
 
-    @Column(name = "competitor_weaknesses", columnDefinition = "NVARCHAR(MAX)")
+    @Column(name = "competitor_weaknesses", length = 4000)
     private String competitorWeaknesses;
 
     @Column(name = "threat_level", length = 30)
     @Builder.Default
     private String threatLevel = "MEDIUM"; // LOW, MEDIUM, HIGH, DOMINANT
 
-    @Column(name = "win_loss_reason", columnDefinition = "NVARCHAR(MAX)")
+    @Column(name = "win_loss_reason", length = 4000)
     private String winLossReason;
 
     @CreationTimestamp

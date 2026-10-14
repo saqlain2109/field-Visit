@@ -27,6 +27,8 @@ import {
   Switch,
   FormControlLabel,
   Paper,
+  InputAdornment,
+  TableContainer,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -242,27 +244,32 @@ export const OpportunitiesPage: React.FC = () => {
     setQuickQuoteOpp(opp);
     let items: any[] = [];
     if (opp.products && opp.products.length > 0) {
-      items = opp.products.map((p: any) => ({
-        productId: p.productId || null,
-        productName: p.productName || 'Product',
-        productCode: p.productCode || '',
-        principal: p.principal || opp.principal || 'General',
-        quantity: p.quantity || 1,
-        unitPrice: Number(p.unitPrice) || 0,
-        discountPercent: 0,
-        totalPrice: Number(p.totalPrice) || (p.quantity || 1) * (Number(p.unitPrice) || 0),
-      }));
+      items = opp.products.map((p: any) => {
+        const matchedProd = products.find((pr) => pr.id === p.productId || pr.name === p.productName);
+        const resolvedUnitPrice = matchedProd?.unitPrice != null ? Number(matchedProd.unitPrice) : (Number(p.unitPrice) || 0);
+        return {
+          productId: matchedProd?.id || p.productId || null,
+          productName: matchedProd?.name || p.productName || 'Product',
+          productCode: matchedProd?.code || p.productCode || '',
+          principal: matchedProd?.principal || p.principal || opp.principal || 'General',
+          quantity: p.quantity || 1,
+          unitPrice: resolvedUnitPrice,
+          discountPercent: 0,
+          totalPrice: (p.quantity || 1) * resolvedUnitPrice,
+        };
+      });
     } else {
+      const defaultProd = products.find((p) => p.principal === opp.principal) || products[0];
       items = [
         {
-          productId: null,
-          productName: opp.name || 'Industrial Equipment',
-          productCode: 'PRD-CUSTOM',
-          principal: opp.principal || 'General',
+          productId: defaultProd?.id || null,
+          productName: defaultProd?.name || opp.name || 'Industrial Equipment',
+          productCode: defaultProd?.code || 'PRD-CUSTOM',
+          principal: defaultProd?.principal || opp.principal || 'General',
           quantity: 1,
-          unitPrice: Number(opp.estimatedValue) || 100000,
+          unitPrice: defaultProd?.unitPrice != null ? Number(defaultProd.unitPrice) : (Number(opp.estimatedValue) || 100000),
           discountPercent: 0,
-          totalPrice: Number(opp.estimatedValue) || 100000,
+          totalPrice: defaultProd?.unitPrice != null ? Number(defaultProd.unitPrice) : (Number(opp.estimatedValue) || 100000),
         },
       ];
     }
@@ -289,15 +296,27 @@ export const OpportunitiesPage: React.FC = () => {
 
   const handleQuickQuoteItemChange = (index: number, field: string, value: any) => {
     const updatedItems = [...quickQuoteForm.items];
-    updatedItems[index] = { ...updatedItems[index], [field]: value };
-    if (field === 'quantity' || field === 'unitPrice' || field === 'discountPercent') {
-      const qty = Number(updatedItems[index].quantity) || 1;
-      const rate = Number(updatedItems[index].unitPrice) || 0;
-      const disc = Number(updatedItems[index].discountPercent) || 0;
-      const gross = qty * rate;
-      const lineTotal = Math.max(0, gross - (gross * disc) / 100);
-      updatedItems[index].totalPrice = lineTotal;
+    const item = { ...updatedItems[index], [field]: value };
+
+    if (field === 'productId') {
+      const selectedProd = products.find((p: any) => p.id === Number(value));
+      if (selectedProd) {
+        item.productId = selectedProd.id;
+        item.productName = selectedProd.name;
+        item.productCode = selectedProd.code;
+        item.principal = selectedProd.principal || quickQuoteOpp?.principal || 'General';
+        item.unitPrice = selectedProd.unitPrice != null ? Number(selectedProd.unitPrice) : 0;
+      }
     }
+
+    const qty = Number(item.quantity) || 1;
+    const rate = Number(item.unitPrice) || 0;
+    const disc = Number(item.discountPercent) || 0;
+    const gross = qty * rate;
+    const lineTotal = Math.max(0, gross - (gross * disc) / 100);
+    item.totalPrice = lineTotal;
+
+    updatedItems[index] = item;
     setQuickQuoteForm({ ...quickQuoteForm, items: updatedItems });
   };
 
@@ -2787,11 +2806,13 @@ export const OpportunitiesPage: React.FC = () => {
                 value={followUpForm.nextAction}
                 onChange={(e) => setFollowUpForm({ ...followUpForm, nextAction: e.target.value })}
               >
-                <MenuItem value="Send Quotation">Send Official Quotation</MenuItem>
-                <MenuItem value="Technical Machine Demo">Technical Machine Demo</MenuItem>
-                <MenuItem value="Site / Plant Inspection">Site / Plant Inspection</MenuItem>
+                <MenuItem value="Follow-up Call">Follow-up Phone Call</MenuItem>
+                <MenuItem value="Send Quotation">Send Official / Revised Quotation</MenuItem>
+                <MenuItem value="Email Follow-up">Follow-up Email</MenuItem>
+                <MenuItem value="WhatsApp Follow-up">WhatsApp / Message Follow-up</MenuItem>
+                <MenuItem value="Online Meeting">Virtual / Online Meeting</MenuItem>
                 <MenuItem value="Price Negotiation">Price & Commercial Negotiation</MenuItem>
-                <MenuItem value="Contract Review">Contract Review</MenuItem>
+                <MenuItem value="Contract Review">Contract / PO Review</MenuItem>
                 <MenuItem value="Payment Follow-up">Payment / Advance Follow-up</MenuItem>
                 <MenuItem value="Final Order Close">Final Order Sign-off</MenuItem>
               </TextField>
@@ -3085,8 +3106,15 @@ export const OpportunitiesPage: React.FC = () => {
       <Dialog
         open={quickQuoteOpen}
         onClose={() => setQuickQuoteOpen(false)}
-        maxWidth="md"
+        maxWidth="lg"
         fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            maxHeight: '92vh',
+            overflowX: 'hidden',
+          },
+        }}
       >
         <Box
           sx={{
@@ -3122,26 +3150,26 @@ export const OpportunitiesPage: React.FC = () => {
           </IconButton>
         </Box>
 
-        <Box sx={{ flex: 1, overflowY: 'auto', p: 3 }}>
+        <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', p: { xs: 2, sm: 3 } }}>
           {quickQuoteOpp && (
             <Box>
               {/* Reference Header */}
-              <Grid container spacing={2} sx={{ mb: 2, p: 1.5, bgcolor: '#F8FAFC', borderRadius: 2 }}>
-                <Grid item xs={12} sm={4}>
-                  <Typography variant="caption" color="text.secondary">Customer Client:</Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 700, color: 'primary.main' }}>
+              <Grid container spacing={2} sx={{ mb: 2.5, p: 2, bgcolor: '#F8FAFC', borderRadius: 2.5, border: '1px solid #E2E8F0' }}>
+                <Grid item xs={12} md={4}>
+                  <Typography variant="caption" sx={{ color: '#64748B', fontWeight: 600 }}>Customer Client:</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 800, color: 'primary.main', fontSize: '0.95rem' }}>
                     {quickQuoteOpp.customer?.name}
                   </Typography>
                 </Grid>
-                <Grid item xs={12} sm={4}>
-                  <Typography variant="caption" color="text.secondary">Contact Person:</Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                <Grid item xs={12} md={4}>
+                  <Typography variant="caption" sx={{ color: '#64748B', fontWeight: 600 }}>Contact Person:</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700, color: '#1E293B' }}>
                     {quickQuoteOpp.contact?.contactName || 'Primary Point of Contact'}
                   </Typography>
                 </Grid>
-                <Grid item xs={12} sm={4}>
-                  <Typography variant="caption" color="text.secondary">Deal Subject:</Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                <Grid item xs={12} md={4}>
+                  <Typography variant="caption" sx={{ color: '#64748B', fontWeight: 600 }}>Deal Subject:</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700, color: '#1E293B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {quickQuoteOpp.name}
                   </Typography>
                 </Grid>
@@ -3154,6 +3182,7 @@ export const OpportunitiesPage: React.FC = () => {
                     value={quickQuoteForm.quoteDate}
                     onChange={(e) => setQuickQuoteForm({ ...quickQuoteForm, quoteDate: e.target.value })}
                     InputLabelProps={{ shrink: true }}
+                    sx={{ bgcolor: '#FFFFFF' }}
                   />
                 </Grid>
                 <Grid item xs={12} sm={4}>
@@ -3164,6 +3193,7 @@ export const OpportunitiesPage: React.FC = () => {
                     label="Offer Validity (Days)"
                     value={quickQuoteForm.validityDays}
                     onChange={(e) => setQuickQuoteForm({ ...quickQuoteForm, validityDays: Number(e.target.value) })}
+                    sx={{ bgcolor: '#FFFFFF' }}
                   />
                 </Grid>
                 <Grid item xs={12} sm={4}>
@@ -3174,12 +3204,13 @@ export const OpportunitiesPage: React.FC = () => {
                     label="Overall Commercial Discount (%)"
                     value={quickQuoteForm.discountPercent}
                     onChange={(e) => setQuickQuoteForm({ ...quickQuoteForm, discountPercent: Number(e.target.value) })}
+                    sx={{ bgcolor: '#FFFFFF' }}
                   />
                 </Grid>
               </Grid>
 
               {/* Line Items Sub-Grid */}
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'primary.main' }}>
                   Quotation Line Items ({quickQuoteForm.items.length})
                 </Typography>
@@ -3188,15 +3219,16 @@ export const OpportunitiesPage: React.FC = () => {
                   variant="outlined"
                   startIcon={<AddIcon />}
                   onClick={() => {
+                    const firstProd = products.find((p: any) => p.principal === quickQuoteOpp?.principal) || products[0];
                     const newItem = {
-                      productId: null,
-                      productName: 'Additional Product / Tooling',
-                      productCode: 'PRD-EXT',
-                      principal: quickQuoteOpp.principal || 'General',
+                      productId: firstProd?.id || null,
+                      productName: firstProd?.name || 'Standard Product',
+                      productCode: firstProd?.code || 'PRD-STD',
+                      principal: firstProd?.principal || quickQuoteOpp?.principal || 'General',
                       quantity: 1,
-                      unitPrice: 50000,
+                      unitPrice: firstProd?.unitPrice != null ? Number(firstProd.unitPrice) : 0,
                       discountPercent: 0,
-                      totalPrice: 50000,
+                      totalPrice: firstProd?.unitPrice != null ? Number(firstProd.unitPrice) : 0,
                     };
                     setQuickQuoteForm({ ...quickQuoteForm, items: [...quickQuoteForm.items, newItem] });
                   }}
@@ -3205,80 +3237,112 @@ export const OpportunitiesPage: React.FC = () => {
                 </Button>
               </Box>
 
-              <Table size="small" border={1} style={{ borderColor: '#E2E8F0', marginBottom: 16 }}>
-                <TableHead>
-                  <TableRow sx={{ bgcolor: '#F1F5F9' }}>
-                    <TableCell>Product / Machinery Model</TableCell>
-                    <TableCell>Principal</TableCell>
-                    <TableCell align="right" sx={{ width: 90 }}>Qty</TableCell>
-                    <TableCell align="right" sx={{ width: 140 }}>Unit Rate (₹)</TableCell>
-                    <TableCell align="right" sx={{ width: 100 }}>Disc %</TableCell>
-                    <TableCell align="right" sx={{ width: 140 }}>Net Amount (₹)</TableCell>
-                    <TableCell align="center" sx={{ width: 50 }}>Del</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {quickQuoteForm.items.map((it: any, idx: number) => (
-                    <TableRow key={idx}>
-                      <TableCell>
-                        <TextField
-                          fullWidth
-                          size="small"
-                          value={it.productName}
-                          onChange={(e) => handleQuickQuoteItemChange(idx, 'productName', e.target.value)}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <TextField
-                          size="small"
-                          value={it.principal}
-                          onChange={(e) => handleQuickQuoteItemChange(idx, 'principal', e.target.value)}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <TextField
-                          type="number"
-                          size="small"
-                          value={it.quantity}
-                          onChange={(e) => handleQuickQuoteItemChange(idx, 'quantity', Number(e.target.value))}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <TextField
-                          type="number"
-                          size="small"
-                          value={it.unitPrice}
-                          onChange={(e) => handleQuickQuoteItemChange(idx, 'unitPrice', Number(e.target.value))}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <TextField
-                          type="number"
-                          size="small"
-                          value={it.discountPercent}
-                          onChange={(e) => handleQuickQuoteItemChange(idx, 'discountPercent', Number(e.target.value))}
-                        />
-                      </TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 700, color: 'primary.main' }}>
-                        ₹{Math.round(it.totalPrice || 0).toLocaleString('en-IN')}
-                      </TableCell>
-                      <TableCell align="center">
-                        <IconButton
-                          size="small"
-                          color="error"
-                          disabled={quickQuoteForm.items.length <= 1}
-                          onClick={() => {
-                            const filtered = quickQuoteForm.items.filter((_: any, i: number) => i !== idx);
-                            setQuickQuoteForm({ ...quickQuoteForm, items: filtered });
-                          }}
-                        >
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </TableCell>
+              <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #E2E8F0', borderRadius: 2.5, mb: 2.5, overflowX: 'hidden' }}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: '#F1F5F9' }}>
+                      <TableCell sx={{ fontWeight: 700, color: '#334155', py: 1.2 }}>Product / Machinery Model</TableCell>
+                      <TableCell align="center" sx={{ width: 120, fontWeight: 700, color: '#334155' }}>Principal</TableCell>
+                      <TableCell align="center" sx={{ width: 90, fontWeight: 700, color: '#334155' }}>Qty</TableCell>
+                      <TableCell align="right" sx={{ width: 150, fontWeight: 700, color: '#334155' }}>Unit Rate (₹)</TableCell>
+                      <TableCell align="center" sx={{ width: 95, fontWeight: 700, color: '#334155' }}>Disc %</TableCell>
+                      <TableCell align="right" sx={{ width: 150, fontWeight: 700, color: '#334155' }}>Net Amount (₹)</TableCell>
+                      <TableCell align="center" sx={{ width: 50, fontWeight: 700, color: '#334155' }}>Del</TableCell>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHead>
+                  <TableBody>
+                    {quickQuoteForm.items.map((it: any, idx: number) => (
+                      <TableRow key={idx} sx={{ '&:hover': { bgcolor: '#F8FAFC' } }}>
+                        <TableCell sx={{ minWidth: 260 }}>
+                          <TextField
+                            select
+                            fullWidth
+                            size="small"
+                            value={it.productId || ''}
+                            onChange={(e) => handleQuickQuoteItemChange(idx, 'productId', e.target.value)}
+                            sx={{ bgcolor: '#FFFFFF' }}
+                          >
+                            <MenuItem value="">-- Select Master Product --</MenuItem>
+                            {products.map((p: any) => (
+                              <MenuItem key={p.id} value={p.id}>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', gap: 2 }}>
+                                  <Typography variant="body2" sx={{ fontWeight: 600 }}>{p.name}</Typography>
+                                  <Chip
+                                    label={p.code || 'PRD'}
+                                    size="small"
+                                    variant="outlined"
+                                    sx={{ height: 20, fontSize: '0.68rem', fontWeight: 600 }}
+                                  />
+                                </Box>
+                              </MenuItem>
+                            ))}
+                          </TextField>
+                          {it.productCode && (
+                            <Typography variant="caption" sx={{ color: '#64748B', display: 'block', mt: 0.4, fontSize: '0.72rem' }}>
+                              OEM Code: <strong>{it.productCode}</strong>
+                            </Typography>
+                          )}
+                        </TableCell>
+                        <TableCell align="center" sx={{ width: 120 }}>
+                          <Chip
+                            label={it.principal || 'General'}
+                            size="small"
+                            sx={{ fontWeight: 600, bgcolor: '#F1F5F9', color: '#1E293B', fontSize: '0.75rem' }}
+                          />
+                        </TableCell>
+                        <TableCell align="center" sx={{ width: 90 }}>
+                          <TextField
+                            type="number"
+                            size="small"
+                            value={it.quantity}
+                            onChange={(e) => handleQuickQuoteItemChange(idx, 'quantity', Math.max(1, Number(e.target.value)))}
+                            inputProps={{ min: 1, style: { textAlign: 'center', padding: '6px 4px' } }}
+                            sx={{ width: 75, bgcolor: '#FFFFFF' }}
+                          />
+                        </TableCell>
+                        <TableCell align="right" sx={{ width: 150 }}>
+                          <Box sx={{ textAlign: 'right', pr: 0.5 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 800, color: '#0F172A', whiteSpace: 'nowrap' }}>
+                              ₹{Number(it.unitPrice || 0).toLocaleString('en-IN')}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: '#64748B', fontSize: '0.68rem', display: 'block' }}>
+                              Locked from Masters
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell align="center" sx={{ width: 95 }}>
+                          <TextField
+                            type="number"
+                            size="small"
+                            value={it.discountPercent}
+                            onChange={(e) => handleQuickQuoteItemChange(idx, 'discountPercent', Math.max(0, Math.min(100, Number(e.target.value))))}
+                            inputProps={{ min: 0, max: 100, style: { textAlign: 'center', padding: '6px 4px' } }}
+                            sx={{ width: 75, bgcolor: '#FFFFFF' }}
+                          />
+                        </TableCell>
+                        <TableCell align="right" sx={{ width: 150 }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'primary.main', textAlign: 'right', whiteSpace: 'nowrap', pr: 0.5 }}>
+                            ₹{Math.round(it.totalPrice || 0).toLocaleString('en-IN')}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="center" sx={{ width: 50 }}>
+                          <IconButton
+                            size="small"
+                            color="error"
+                            disabled={quickQuoteForm.items.length <= 1}
+                            onClick={() => {
+                              const filtered = quickQuoteForm.items.filter((_: any, i: number) => i !== idx);
+                              setQuickQuoteForm({ ...quickQuoteForm, items: filtered });
+                            }}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
 
               {/* Live Financial Totals */}
               {(() => {

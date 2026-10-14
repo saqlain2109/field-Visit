@@ -90,6 +90,6 @@ public class LoginLog {
     @Builder.Default
     private Boolean isDeleted = false;
 
-    @Column(columnDefinition = "NVARCHAR(MAX)")
+    @Column(length = 4000)
     private String details;
 }

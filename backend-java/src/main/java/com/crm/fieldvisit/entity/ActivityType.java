@@ -28,7 +28,7 @@ public class ActivityType {
     @Column(nullable = false, length = 100)
     private String name;
 
-    @Column(columnDefinition = "NVARCHAR(MAX)")
+    @Column(length = 4000)
     private String description;
 
     @Column(length = 50)

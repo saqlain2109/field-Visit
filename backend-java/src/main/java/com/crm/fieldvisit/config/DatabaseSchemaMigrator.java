@@ -20,6 +20,21 @@ public class DatabaseSchemaMigrator implements CommandLineRunner {
         log.info("Running Database Schema Auto-Migration for Security, Lockout & Audit Columns...");
 
         try {
+            // Check if database is Microsoft SQL Server
+            if (jdbcTemplate.getDataSource() != null) {
+                try (var conn = jdbcTemplate.getDataSource().getConnection()) {
+                    String dbProduct = conn.getMetaData().getDatabaseProductName().toLowerCase();
+                    if (!dbProduct.contains("microsoft") && !dbProduct.contains("sql server")) {
+                        log.info("Non-MSSQL database detected ({}). Skipping MSSQL-specific T-SQL schema migration.", dbProduct);
+                        return;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not check database product name: {}", e.getMessage());
+        }
+
+        try {
             // 1. Check & Alter login_logs table
             safeExecute("""
                 IF OBJECT_ID('login_logs', 'U') IS NOT NULL

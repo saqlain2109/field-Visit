@@ -28,6 +28,11 @@ import { DailyVisitsScreen } from './src/screens/DailyVisitsScreen';
 import { ApprovalsScreen } from './src/screens/ApprovalsScreen';
 import { OpportunitiesScreen } from './src/screens/OpportunitiesScreen';
 import { CustomersScreen } from './src/screens/CustomersScreen';
+import { QuotationsScreen } from './src/screens/QuotationsScreen';
+import { UserManagementScreen } from './src/screens/UserManagementScreen';
+import { MastersScreen } from './src/screens/MastersScreen';
+import { AuditLogsScreen } from './src/screens/AuditLogsScreen';
+import { MoreHubScreen } from './src/screens/MoreHubScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { LogVisitModal } from './src/screens/LogVisitModal';
 
@@ -152,6 +157,36 @@ const MainNavigator: React.FC = () => {
             customers={customers}
             loading={dataLoading}
             onRefresh={fetchMasterAndDomainData}
+          />
+        )}
+
+        {activeTab === 'quotations' && (
+          <QuotationsScreen
+            quotations={quotations}
+            loading={dataLoading}
+            onRefresh={fetchMasterAndDomainData}
+          />
+        )}
+
+        {activeTab === 'users' && (
+          <UserManagementScreen
+            onRefresh={fetchMasterAndDomainData}
+            onBack={() => setActiveTab('hub')}
+          />
+        )}
+
+        {activeTab === 'masters' && (
+          <MastersScreen onBack={() => setActiveTab('hub')} />
+        )}
+
+        {activeTab === 'audit_logs' && (
+          <AuditLogsScreen onBack={() => setActiveTab('hub')} />
+        )}
+
+        {activeTab === 'hub' && (
+          <MoreHubScreen
+            onNavigateTab={setActiveTab}
+            pendingApprovalsCount={pendingApprovalsCount}
           />
         )}
 

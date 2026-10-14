@@ -1598,7 +1598,9 @@ export const QuotationsPage: React.FC = () => {
                         fullWidth
                         size="small"
                         value={row.unitPrice}
-                        onChange={(e) => handleItemRowChange(index, 'unitPrice', Number(e.target.value))}
+                        InputProps={{ readOnly: true }}
+                        sx={{ bgcolor: '#F8FAFC' }}
+                        helperText="Master Rate"
                       />
                     </TableCell>
                     <TableCell>

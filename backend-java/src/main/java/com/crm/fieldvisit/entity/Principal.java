@@ -40,7 +40,7 @@ public class Principal {
     @Column(name = "contact_phone", length = 50)
     private String contactPhone;
 
-    @Column(name = "description", columnDefinition = "NVARCHAR(MAX)")
+    @Column(name = "description", length = 4000)
     private String description;
 
     @Column(name = "is_active", nullable = false)

@@ -184,58 +184,78 @@ public class AuthService {
     private void checkRegionAccess(Employee employee, String clientIp, Double clientLat, Double clientLon,
                                    HttpServletRequest request, String method, String browser, String os, String fingerprint) {
         if (employee != null && Boolean.TRUE.equals(employee.getIsRegionRestricted())) {
+            Double lat = clientLat;
+            Double lon = clientLon;
+            if (lat == null || lon == null) {
+                String hLat = request.getHeader("X-Client-Latitude");
+                String hLon = request.getHeader("X-Client-Longitude");
+                if (hLat != null && hLon != null) {
+                    try {
+                        lat = Double.parseDouble(hLat.trim());
+                        lon = Double.parseDouble(hLon.trim());
+                    } catch (Exception ignored) {}
+                }
+            }
+
             // 1. Coordinate / Area Geo-Fence Check (if allowed_latitude & allowed_longitude are configured)
             if (employee.getAllowedLatitude() != null && employee.getAllowedLongitude() != null) {
+                if (lat == null || lon == null) {
+                    String errorMsg = "Access Blocked: Your account requires GPS location verification for your assigned work zone. Please allow location access in your browser to sign in.";
+                    LoginLog blockedLog = LoginLog.builder()
+                            .employeeId(employee.getId())
+                            .employeeName(employee.getName())
+                            .email(employee.getEmail())
+                            .loginMethod(method)
+                            .loginStatus("Blocked")
+                            .failureReason("Missing GPS location for coordinate-fenced account")
+                            .ipAddress(clientIp)
+                            .browser(browser)
+                            .operatingSystem(os)
+                            .deviceFingerprint(fingerprint)
+                            .eventType("GEO_FENCE_BLOCKED")
+                            .isActiveSession(false)
+                            .isDeleted(false)
+                            .details(errorMsg)
+                            .build();
+                    loginLogRepository.saveAndFlush(blockedLog);
+                    throw new BadCredentialsException(errorMsg);
+                }
+
                 double targetLat = employee.getAllowedLatitude();
                 double targetLon = employee.getAllowedLongitude();
                 double allowedRadiusKm = employee.getAllowedRadiusKm() != null ? employee.getAllowedRadiusKm() : 25.0;
 
-                Double lat = clientLat;
-                Double lon = clientLon;
-                if (lat == null || lon == null) {
-                    String hLat = request.getHeader("X-Client-Latitude");
-                    String hLon = request.getHeader("X-Client-Longitude");
-                    if (hLat != null && hLon != null) {
-                        try {
-                            lat = Double.parseDouble(hLat.trim());
-                            lon = Double.parseDouble(hLon.trim());
-                        } catch (Exception ignored) {}
-                    }
-                }
+                double distKm = calculateHaversineDistanceKm(lat, lon, targetLat, targetLon);
+                if (distKm > allowedRadiusKm) {
+                    String errorMsg = String.format("Access Denied: You are outside your assigned work zone. Your distance is %.1f km (Allowed radius: %.1f km).",
+                            distKm, allowedRadiusKm);
 
-                if (lat != null && lon != null) {
-                    double distKm = calculateHaversineDistanceKm(lat, lon, targetLat, targetLon);
-                    if (distKm > allowedRadiusKm) {
-                        String errorMsg = String.format("Access Denied: You are outside your assigned work zone. Your distance is %.1f km (Allowed radius: %.1f km).",
-                                distKm, allowedRadiusKm);
+                    LoginLog blockedLog = LoginLog.builder()
+                            .employeeId(employee.getId())
+                            .employeeName(employee.getName())
+                            .email(employee.getEmail())
+                            .loginMethod(method)
+                            .loginStatus("Blocked")
+                            .failureReason(String.format("Coordinate fence violation: %.1f km away", distKm))
+                            .ipAddress(clientIp)
+                            .browser(browser)
+                            .operatingSystem(os)
+                            .deviceFingerprint(fingerprint)
+                            .eventType("GEO_FENCE_BLOCKED")
+                            .isActiveSession(false)
+                            .isDeleted(false)
+                            .details(errorMsg)
+                            .build();
+                    loginLogRepository.saveAndFlush(blockedLog);
 
-                        LoginLog blockedLog = LoginLog.builder()
-                                .employeeId(employee.getId())
-                                .employeeName(employee.getName())
-                                .email(employee.getEmail())
-                                .loginMethod(method)
-                                .loginStatus("Blocked")
-                                .failureReason(String.format("Coordinate fence violation: %.1f km away", distKm))
-                                .ipAddress(clientIp)
-                                .browser(browser)
-                                .operatingSystem(os)
-                                .deviceFingerprint(fingerprint)
-                                .eventType("GEO_FENCE_BLOCKED")
-                                .isActiveSession(false)
-                                .isDeleted(false)
-                                .details(errorMsg)
-                                .build();
-                        loginLogRepository.saveAndFlush(blockedLog);
-
-                        throw new BadCredentialsException(errorMsg);
-                    }
+                    throw new BadCredentialsException(errorMsg);
                 }
             }
 
-            // 2. Country / Region Policy Check (e.g. IN for India)
+            // 2. Country / Region Policy Check (e.g. IN for India, AE for UAE)
             if (employee.getAllowedRegions() != null && !employee.getAllowedRegions().isBlank()) {
                 GeoIpService.GeoCheckResult geoResult = geoIpService.evaluateRegionPolicy(
-                        clientIp, request, employee.getIsRegionRestricted(), employee.getAllowedRegions());
+                        clientIp, lat, lon, request, employee.getIsRegionRestricted(), employee.getAllowedRegions());
                 if (!geoResult.isAllowed()) {
                     String errorMsg = String.format("Access Denied: Your administrator has restricted your login to region [%s]. Detected location is %s (%s).",
                             geoResult.getAllowedRegions(), geoResult.getCountryName(), geoResult.getCountryCode());

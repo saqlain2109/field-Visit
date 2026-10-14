@@ -15,6 +15,7 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({
 }) => {
   const { user } = useAuth();
   const isAdminOrManager = user?.role === 'ADMIN' || user?.role === 'MANAGER';
+  const hubTabs = ['hub', 'users', 'masters', 'audit_logs', 'opportunities', 'quotations', 'profile'];
 
   const tabs = [
     { key: 'dashboard', label: 'Overview', icon: '📊' },
@@ -26,15 +27,21 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({
           icon: '🛡️',
           badge: pendingApprovalsCount,
         }
-      : { key: 'opportunities', label: 'Deals', icon: '🎯' },
+      : { key: 'quotations', label: 'Quotes', icon: '📄' },
     { key: 'customers', label: 'Clients', icon: '🏢' },
-    { key: 'profile', label: 'Account', icon: '👤' },
+    {
+      key: 'hub',
+      label: 'Hub',
+      icon: '⚡',
+      badge: 0,
+    },
   ];
 
   return (
     <View style={styles.tabBar}>
       {tabs.map((tab) => {
-        const isActive = activeTab === tab.key;
+        const isActive =
+          activeTab === tab.key || (tab.key === 'hub' && hubTabs.includes(activeTab));
         return (
           <TouchableOpacity
             key={tab.key}

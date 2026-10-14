@@ -45,6 +45,7 @@ import {
   KeyOutlined,
   PhoneAndroidOutlined,
   CheckCircleOutline,
+  LocationOnOutlined,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { AccountInfo } from '@azure/msal-browser';
@@ -186,24 +187,153 @@ export const LoginPage: React.FC = () => {
   const { login, loginWithMicrosoft, loginWithGoogle, verifyTwoFactor, resendTwoFactor, loading, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
-  const getBrowserCoordinates = (): Promise<{ latitude?: number; longitude?: number }> => {
-    return new Promise((resolve) => {
-      if (typeof window === 'undefined' || !navigator.geolocation) {
-        resolve({});
-        return;
+  const [locationStatus, setLocationStatus] = useState<'prompt' | 'granted' | 'denied' | 'checking'>('prompt');
+  const [cachedCoords, setCachedCoords] = useState<{ latitude: number; longitude: number } | null>(() => {
+    try {
+      const savedLat = sessionStorage.getItem('fv_user_lat') || localStorage.getItem('fv_user_lat');
+      const savedLon = sessionStorage.getItem('fv_user_lon') || localStorage.getItem('fv_user_lon');
+      if (savedLat && savedLon) {
+        return { latitude: parseFloat(savedLat), longitude: parseFloat(savedLon) };
       }
+    } catch (e) {}
+    return null;
+  });
+
+  // Proactively check geolocation permission status and cache coordinates
+  useEffect(() => {
+    try {
+      const savedLat = sessionStorage.getItem('fv_user_lat') || localStorage.getItem('fv_user_lat');
+      const savedLon = sessionStorage.getItem('fv_user_lon') || localStorage.getItem('fv_user_lon');
+      if (savedLat && savedLon) {
+        setCachedCoords({ latitude: parseFloat(savedLat), longitude: parseFloat(savedLon) });
+        setLocationStatus('granted');
+      }
+    } catch (e) {}
+
+    if (typeof window !== 'undefined' && 'permissions' in navigator) {
+      navigator.permissions.query({ name: 'geolocation' }).then((result) => {
+        if (result.state === 'granted') {
+          setLocationStatus('granted');
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              const coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+              setCachedCoords(coords);
+              setLocationStatus('granted');
+              try {
+                sessionStorage.setItem('fv_user_lat', coords.latitude.toString());
+                sessionStorage.setItem('fv_user_lon', coords.longitude.toString());
+                localStorage.setItem('fv_user_lat', coords.latitude.toString());
+                localStorage.setItem('fv_user_lon', coords.longitude.toString());
+              } catch (e) {}
+            },
+            () => {},
+            { timeout: 3000, enableHighAccuracy: false, maximumAge: 300000 }
+          );
+        } else {
+          setLocationStatus(result.state as any);
+        }
+        result.onchange = () => {
+          if (result.state === 'granted') {
+            setLocationStatus('granted');
+            navigator.geolocation.getCurrentPosition(
+              (pos) => {
+                const coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+                setCachedCoords(coords);
+                setLocationStatus('granted');
+                try {
+                  sessionStorage.setItem('fv_user_lat', coords.latitude.toString());
+                  sessionStorage.setItem('fv_user_lon', coords.longitude.toString());
+                  localStorage.setItem('fv_user_lat', coords.latitude.toString());
+                  localStorage.setItem('fv_user_lon', coords.longitude.toString());
+                } catch (e) {}
+              },
+              () => {},
+              { timeout: 3000, enableHighAccuracy: false, maximumAge: 300000 }
+            );
+          } else {
+            setLocationStatus(result.state as any);
+          }
+        };
+      }).catch(() => {});
+    }
+  }, []);
+
+  const requireCoordinates = (): Promise<{ latitude: number; longitude: number }> => {
+    if (cachedCoords) {
+      return Promise.resolve(cachedCoords);
+    }
+    try {
+      const savedLat = sessionStorage.getItem('fv_user_lat') || localStorage.getItem('fv_user_lat');
+      const savedLon = sessionStorage.getItem('fv_user_lon') || localStorage.getItem('fv_user_lon');
+      if (savedLat && savedLon) {
+        const coords = { latitude: parseFloat(savedLat), longitude: parseFloat(savedLon) };
+        setCachedCoords(coords);
+        setLocationStatus('granted');
+        return Promise.resolve(coords);
+      }
+    } catch (e) {}
+
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      return Promise.reject(
+        new Error('Geolocation is not supported by your browser. Please use a modern web browser to log in.')
+      );
+    }
+    return new Promise((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          resolve({
+          const coords = {
             latitude: pos.coords.latitude,
             longitude: pos.coords.longitude,
-          });
+          };
+          setCachedCoords(coords);
+          setLocationStatus('granted');
+          try {
+            sessionStorage.setItem('fv_user_lat', coords.latitude.toString());
+            sessionStorage.setItem('fv_user_lon', coords.longitude.toString());
+            localStorage.setItem('fv_user_lat', coords.latitude.toString());
+            localStorage.setItem('fv_user_lon', coords.longitude.toString());
+          } catch (e) {}
+          resolve(coords);
         },
         (err) => {
-          console.warn('Geolocation lookup notice:', err.message);
-          resolve({});
+          try {
+            const savedLat = sessionStorage.getItem('fv_user_lat') || localStorage.getItem('fv_user_lat');
+            const savedLon = sessionStorage.getItem('fv_user_lon') || localStorage.getItem('fv_user_lon');
+            if (savedLat && savedLon) {
+              const coords = { latitude: parseFloat(savedLat), longitude: parseFloat(savedLon) };
+              setCachedCoords(coords);
+              setLocationStatus('granted');
+              resolve(coords);
+              return;
+            }
+          } catch (e) {}
+
+          setLocationStatus('denied');
+          if (err.code === 1) {
+            reject(
+              new Error(
+                '⚠️ Location Access Denied: Workplace security policy requires physical location verification. Please allow location permissions in your browser (click the 🔒 lock icon in the address bar -> Site settings -> Allow Location) and try again.'
+              )
+            );
+          } else if (err.code === 2) {
+            reject(
+              new Error(
+                '⚠️ Location Unavailable: Unable to determine your physical location. Please enable device location services and retry.'
+              )
+            );
+          } else if (err.code === 3) {
+            reject(
+              new Error(
+                '⚠️ Location Timeout: Could not determine GPS location in time. Please verify browser location permissions and retry.'
+              )
+            );
+          } else {
+            reject(
+              new Error('⚠️ Location Access Required: Please enable location permissions to log in.')
+            );
+          }
         },
-        { timeout: 2500, maximumAge: 60000, enableHighAccuracy: false }
+        { timeout: 3000, enableHighAccuracy: false, maximumAge: 300000 }
       );
     });
   };
@@ -233,10 +363,10 @@ export const LoginPage: React.FC = () => {
 
   const handleGoogleCredentialResponse = async (response: any) => {
     if (!response?.credential) return;
-    setGoogleLoading(true);
     setError(null);
     try {
-      const coords = await getBrowserCoordinates();
+      const coords = await requireCoordinates();
+      setGoogleLoading(true);
       const claims = decodeJwtPayload(response.credential);
       const email = claims?.email;
       const name = claims?.name;
@@ -275,8 +405,15 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const handleGoogleSignInOfficial = () => {
+  const handleGoogleSignInOfficial = async () => {
     setError(null);
+    try {
+      await requireCoordinates();
+    } catch (geoErr: any) {
+      setError(geoErr.message);
+      return;
+    }
+
     const googleClientId =
       import.meta.env.VITE_GOOGLE_CLIENT_ID ||
       '375440962272-ddvoognc2ih0ecvjk6vko6poga5r6ejn.apps.googleusercontent.com';
@@ -303,7 +440,7 @@ export const LoginPage: React.FC = () => {
                   headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
                 });
                 const userProfile = await userinfoRes.json();
-                const coords = await getBrowserCoordinates();
+                const coords = await requireCoordinates();
 
                 const res = await loginWithGoogle({
                   accessToken: tokenResponse.access_token,
@@ -359,12 +496,12 @@ export const LoginPage: React.FC = () => {
 
   const handleGoogleLogin = async (targetEmail?: string, targetName?: string) => {
     setError(null);
-    setGoogleLoading(true);
-    setShowGoogleModal(false);
     try {
+      const coords = await requireCoordinates();
+      setGoogleLoading(true);
+      setShowGoogleModal(false);
       const emailToUse = targetEmail || customGoogleEmail.trim() || 'saqlainsupariwala@gmail.com';
       const nameToUse = targetName || emailToUse.split('@')[0];
-      const coords = await getBrowserCoordinates();
 
       const res = await loginWithGoogle({
         email: emailToUse,
@@ -397,11 +534,11 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const processMsalResponse = async (loginResponse: any) => {
+  const processMsalResponse = async (loginResponse: any, providedCoords?: { latitude: number; longitude: number }) => {
     try {
       setMsalLoading(true);
       setError(null);
-      const coords = await getBrowserCoordinates();
+      const coords = providedCoords || (await requireCoordinates());
       const email =
         loginResponse.account?.username ||
         (loginResponse.idTokenClaims as any)?.preferred_username ||
@@ -467,9 +604,13 @@ export const LoginPage: React.FC = () => {
       try {
         // If this window is a popup opened by MSAL:
         if (typeof window !== 'undefined' && window.opener && (window.name.includes('msal') || window.location.hash.includes('code='))) {
-          const redirectRes = await initMsal();
-          if (redirectRes && window.opener && window.opener !== window) {
-            try { window.close(); } catch (e) {}
+          try {
+            await initMsal();
+          } catch (e) {}
+          if (window.opener && window.opener !== window) {
+            setTimeout(() => {
+              try { window.close(); } catch (e) {}
+            }, 300);
             return;
           }
         }
@@ -501,24 +642,6 @@ export const LoginPage: React.FC = () => {
             homeAccountId: accounts[0].homeAccountId,
             localAccountId: accounts[0].localAccountId
           }));
-        } else {
-          // If no cached accounts, check silent SSO if not explicitly logged out
-          if (sessionStorage.getItem('logged_out') !== 'true') {
-            try {
-              const silentRes = await msalInstance.ssoSilent(loginRequest);
-              if (silentRes?.account && isMounted) {
-                setDetectedAccount(silentRes.account);
-                localStorage.setItem('last_detected_ms_account', JSON.stringify({
-                  name: silentRes.account.name,
-                  username: silentRes.account.username,
-                  homeAccountId: silentRes.account.homeAccountId,
-                  localAccountId: silentRes.account.localAccountId
-                }));
-              }
-            } catch (e) {
-              // Silent SSO not available
-            }
-          }
         }
 
         // Clean lingering code / error in hash if any
@@ -559,7 +682,7 @@ export const LoginPage: React.FC = () => {
     setError(null);
     setIsLockedOut(false);
     try {
-      const coords = await getBrowserCoordinates();
+      const coords = await requireCoordinates();
       const res = await login(username, password, coords.latitude, coords.longitude);
       if (res && res.requires2FA) {
         setTwoFactorChallenge(res);
@@ -620,28 +743,56 @@ export const LoginPage: React.FC = () => {
 
   const handleMicrosoftLogin = async (forceAccountPicker: boolean = false) => {
     setError(null);
+    setIsLockedOut(false);
+    let coords: { latitude: number; longitude: number };
+    try {
+      coords = await requireCoordinates();
+    } catch (geoErr: any) {
+      setError(geoErr.message);
+      return;
+    }
+
     setMsalLoading(true);
     sessionStorage.removeItem('logged_out');
-    clearMsalStorage();
+
+    if (forceAccountPicker) {
+      clearMsalStorage();
+    }
 
     try {
       await initMsal();
 
+      // Fast check: if account is recognized and in MSAL cache, attempt instant silent token
       if (detectedAccount && !forceAccountPicker) {
-        try {
-          const silentRes = await msalInstance.acquireTokenSilent({
-            ...loginRequest,
-            account: detectedAccount,
-          });
-          if (silentRes) {
-            await processMsalResponse(silentRes);
-            return;
+        const allAccounts = msalInstance.getAllAccounts();
+        const matched = allAccounts.find(
+          (acc) =>
+            (acc.homeAccountId && acc.homeAccountId === detectedAccount.homeAccountId) ||
+            (acc.username && acc.username.toLowerCase() === detectedAccount.username.toLowerCase())
+        );
+
+        if (matched) {
+          try {
+            const silentPromise = msalInstance.acquireTokenSilent({
+              ...loginRequest,
+              account: matched,
+            });
+            const timeoutPromise = new Promise<null>((_, reject) =>
+              setTimeout(() => reject(new Error('silent_timeout')), 1200)
+            );
+            const silentRes = await Promise.race([silentPromise, timeoutPromise]);
+            if (silentRes) {
+              await processMsalResponse(silentRes, coords);
+              return;
+            }
+          } catch (silentErr) {
+            console.warn('Silent token acquire fallback to redirect:', silentErr);
           }
-        } catch (silentErr) {
-          console.warn('Silent token acquire fallback to interactive:', silentErr);
         }
       }
 
+      // Interactive Authentication: Direct Redirect (No Popups!)
+      // This completely eliminates Chrome popup-blocking, window timeouts, and 20s polling hangs.
       const requestConfig: any = {
         ...loginRequest,
         redirectUri: getCurrentRedirectUri(),
@@ -649,30 +800,7 @@ export const LoginPage: React.FC = () => {
         loginHint: !forceAccountPicker && detectedAccount ? detectedAccount.username : undefined,
       };
 
-      // If already in a popup window or iframe, use redirect to prevent block_nested_popups
-      if (typeof window !== 'undefined' && window.opener && window.opener !== window) {
-        await msalInstance.loginRedirect(requestConfig);
-        return;
-      }
-
-      let loginResponse;
-      try {
-        loginResponse = await msalInstance.loginPopup(requestConfig);
-      } catch (popupErr: any) {
-        console.warn('MSAL popup error, falling back to redirect:', popupErr);
-        if (popupErr?.errorCode === 'user_cancelled') {
-          setError('Microsoft sign-in was cancelled.');
-          return;
-        }
-        // Fall back cleanly to redirect flow without nested popup errors
-        clearMsalStorage();
-        await msalInstance.loginRedirect(requestConfig);
-        return;
-      }
-
-      if (loginResponse) {
-        await processMsalResponse(loginResponse);
-      }
+      await msalInstance.loginRedirect(requestConfig);
     } catch (err: any) {
       console.error('Microsoft login error:', err);
       if (err?.errorCode === 'user_cancelled') {
@@ -697,6 +825,9 @@ export const LoginPage: React.FC = () => {
 
   // If this window is an MSAL popup window, show a minimal loader so user doesn't see nested login
   if (typeof window !== 'undefined' && window.opener && window.name && window.name.includes('msal')) {
+    setTimeout(() => {
+      try { window.close(); } catch (e) {}
+    }, 800);
     return (
       <Box
         sx={{
@@ -803,6 +934,67 @@ export const LoginPage: React.FC = () => {
             >
               {error}
             </Alert>
+          )}
+
+          {/* Location Permission Status / Requirement Banner */}
+          {locationStatus !== 'granted' ? (
+            <Alert
+              severity={locationStatus === 'denied' ? 'error' : 'info'}
+              icon={<LocationOnOutlined />}
+              action={
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={() => {
+                    requireCoordinates()
+                      .then(() => setError(null))
+                      .catch((err) => setError(err.message));
+                  }}
+                  sx={{ fontWeight: 700, textTransform: 'none', whiteSpace: 'nowrap', minWidth: 'auto', px: 1.2 }}
+                >
+                  {locationStatus === 'denied' ? 'Retry Location' : 'Allow Location'}
+                </Button>
+              }
+              sx={{
+                mb: 2.5,
+                borderRadius: 2,
+                fontSize: '0.8rem',
+                fontWeight: 500,
+                alignItems: 'center',
+                '& .MuiAlert-message': {
+                  lineHeight: 1.3,
+                },
+              }}
+            >
+              {locationStatus === 'denied' ? (
+                <span>
+                  <strong>Location Blocked:</strong> Workplace security policy requires location verification to sign in. Click lock icon 🔒 in address bar to allow location.
+                </span>
+              ) : (
+                <span>
+                  <strong>Location Required:</strong> Workplace security requires browser location verification before signing in.
+                </span>
+              )}
+            </Alert>
+          ) : (
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                mb: 2,
+                p: 0.9,
+                px: 1.5,
+                borderRadius: 2,
+                bgcolor: '#ECFDF5',
+                border: '1px solid #A7F3D0',
+              }}
+            >
+              <CheckCircleOutline sx={{ color: '#059669', fontSize: 18 }} />
+              <Typography variant="caption" sx={{ color: '#065F46', fontWeight: 600 }}>
+                Location Verified {cachedCoords?.latitude ? `(${cachedCoords.latitude.toFixed(2)}°, ${cachedCoords.longitude.toFixed(2)}°)` : 'Active'} • Geo-Fencing Active
+              </Typography>
+            </Box>
           )}
 
           {/* Quick Login Role Selector Dropdown */}

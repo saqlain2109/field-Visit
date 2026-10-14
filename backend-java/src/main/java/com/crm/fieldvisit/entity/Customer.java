@@ -51,10 +51,10 @@ public class Customer {
     @Builder.Default
     private String status = "Active";
 
-    @Column(columnDefinition = "NVARCHAR(MAX)")
+    @Column(length = 4000)
     private String remarks;
 
-    @Column(columnDefinition = "NVARCHAR(MAX)")
+    @Column(length = 4000)
     private String address;
 
     @Column(length = 100)

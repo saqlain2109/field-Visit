@@ -94,11 +94,28 @@ public class GeoIpService {
     }
 
     /**
+     * Resolves country code from GPS coordinates based on bounding boxes.
+     */
+    public String resolveCountryFromCoordinates(Double lat, Double lon) {
+        if (lat == null || lon == null) return null;
+        if (lat >= 6.0 && lat <= 38.0 && lon >= 68.0 && lon <= 98.0) return "IN";
+        if (lat >= 22.0 && lat <= 26.5 && lon >= 51.0 && lon <= 56.5) return "AE";
+        if (lat >= 24.0 && lat <= 50.0 && lon >= -125.0 && lon <= -65.0) return "US";
+        if (lat >= 49.0 && lat <= 61.0 && lon >= -8.5 && lon <= 2.5) return "GB";
+        if (lat >= 1.15 && lat <= 1.48 && lon >= 103.6 && lon <= 104.1) return "SG";
+        if (lat >= -44.0 && lat <= -10.0 && lon >= 112.0 && lon <= 154.0) return "AU";
+        if (lat >= 47.0 && lat <= 55.0 && lon >= 5.5 && lon <= 15.5) return "DE";
+        if (lat >= 42.0 && lat <= 70.0 && lon >= -141.0 && lon <= -52.0) return "CA";
+        return null;
+    }
+
+    /**
      * Evaluates whether a login attempt satisfies the employee's region restriction policy.
      */
-    public GeoCheckResult evaluateRegionPolicy(String ip, HttpServletRequest request,
+    public GeoCheckResult evaluateRegionPolicy(String ip, Double lat, Double lon, HttpServletRequest request,
                                                Boolean isRegionRestricted, String allowedRegions) {
-        String detectedCountry = resolveCountryCode(ip, request);
+        String coordCountry = resolveCountryFromCoordinates(lat, lon);
+        String detectedCountry = (coordCountry != null) ? coordCountry : resolveCountryCode(ip, request);
         String countryName = getCountryName(detectedCountry);
 
         if (isRegionRestricted == null || !isRegionRestricted || allowedRegions == null || allowedRegions.isBlank()) {
@@ -111,9 +128,15 @@ public class GeoIpService {
                 .anyMatch(r -> r.equalsIgnoreCase(detectedCountry)
                         || r.equalsIgnoreCase(countryName)
                         || ("IN".equalsIgnoreCase(detectedCountry) && r.equalsIgnoreCase("India"))
+                        || ("AE".equalsIgnoreCase(detectedCountry) && (r.equalsIgnoreCase("UAE") || r.equalsIgnoreCase("United Arab Emirates") || r.equalsIgnoreCase("Dubai")))
                         || ("US".equalsIgnoreCase(detectedCountry) && (r.equalsIgnoreCase("USA") || r.equalsIgnoreCase("United States"))));
 
         return new GeoCheckResult(isMatch, detectedCountry, countryName, allowedRegions);
+    }
+
+    public GeoCheckResult evaluateRegionPolicy(String ip, HttpServletRequest request,
+                                               Boolean isRegionRestricted, String allowedRegions) {
+        return evaluateRegionPolicy(ip, null, null, request, isRegionRestricted, allowedRegions);
     }
 
     public boolean isLocalOrPrivateIp(String ip) {

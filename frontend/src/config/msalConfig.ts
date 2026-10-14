@@ -42,35 +42,38 @@ export const msalConfig: Configuration = {
   },
 };
 
-// Request scopes for login
+// Request scopes for login - Standard OIDC claims for instantaneous auth
 export const loginRequest = {
-  scopes: ['openid', 'profile', 'email', 'User.Read'],
+  scopes: ['openid', 'profile', 'email'],
   redirectUri: getCurrentRedirectUri(),
 };
 
 // Singleton instance of PublicClientApplication
 export const msalInstance = new PublicClientApplication(msalConfig);
 
-let msalInitPromise: Promise<AuthenticationResult | null> | null = null;
+let msalInitPromise: Promise<void> | null = null;
 
-/**
- * Singleton initialization and redirect promise handler.
- * Safe to call multiple times and resilient against React StrictMode double-mounts.
- */
-export const initMsal = (): Promise<AuthenticationResult | null> => {
+export const ensureMsalInitialized = (): Promise<void> => {
   if (!msalInitPromise) {
-    msalInitPromise = (async () => {
-      try {
-        await msalInstance.initialize();
-        const res = await msalInstance.handleRedirectPromise();
-        return res;
-      } catch (err) {
-        console.warn('MSAL initialization/redirect error:', err);
-        return null;
-      }
-    })();
+    msalInitPromise = msalInstance.initialize().catch((err) => {
+      console.warn('MSAL initialization error:', err);
+    });
   }
   return msalInitPromise;
+};
+
+/**
+ * Handle redirect promise dynamically. Safe to call multiple times.
+ */
+export const initMsal = async (): Promise<AuthenticationResult | null> => {
+  await ensureMsalInitialized();
+  try {
+    const res = await msalInstance.handleRedirectPromise();
+    return res;
+  } catch (err) {
+    console.warn('MSAL redirect error:', err);
+    return null;
+  }
 };
 
 /**

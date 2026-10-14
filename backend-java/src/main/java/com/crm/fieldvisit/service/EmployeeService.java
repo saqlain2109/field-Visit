@@ -88,11 +88,18 @@ public class EmployeeService {
         if (request.getRole() != null) emp.setRole(request.getRole());
         if (request.getGrade() != null) emp.setGrade(request.getGrade());
         if (request.getIs2faEnabled() != null) emp.setIs2faEnabled(request.getIs2faEnabled());
-        if (request.getIsRegionRestricted() != null) emp.setIsRegionRestricted(request.getIsRegionRestricted());
-        if (request.getAllowedRegions() != null) emp.setAllowedRegions(request.getAllowedRegions());
-        if (request.getAllowedLatitude() != null) emp.setAllowedLatitude(request.getAllowedLatitude());
-        if (request.getAllowedLongitude() != null) emp.setAllowedLongitude(request.getAllowedLongitude());
-        if (request.getAllowedRadiusKm() != null) emp.setAllowedRadiusKm(request.getAllowedRadiusKm());
+        if (request.getIsRegionRestricted() != null) {
+            emp.setIsRegionRestricted(request.getIsRegionRestricted());
+            if (request.getAllowedRegions() != null) emp.setAllowedRegions(request.getAllowedRegions());
+            emp.setAllowedLatitude(request.getAllowedLatitude());
+            emp.setAllowedLongitude(request.getAllowedLongitude());
+            emp.setAllowedRadiusKm(request.getAllowedRadiusKm() != null ? request.getAllowedRadiusKm() : 25.0);
+        } else {
+            if (request.getAllowedRegions() != null) emp.setAllowedRegions(request.getAllowedRegions());
+            if (request.getAllowedLatitude() != null) emp.setAllowedLatitude(request.getAllowedLatitude());
+            if (request.getAllowedLongitude() != null) emp.setAllowedLongitude(request.getAllowedLongitude());
+            if (request.getAllowedRadiusKm() != null) emp.setAllowedRadiusKm(request.getAllowedRadiusKm());
+        }
         if (request.getPassword() != null && !request.getPassword().isBlank()) {
             emp.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         }

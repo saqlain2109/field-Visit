@@ -72,12 +72,14 @@ export interface ExpenseHead {
   category?: string;
   requiresKmCalculation?: boolean;
   requiresApproval?: boolean;
+  requiresAttachment?: boolean;
   isActive?: boolean;
 }
 
 export interface GradeFuelRate {
   id: number;
   gradeCode: string;
+  gradeName?: string;
   fuelRate: number;
   twoWheelerRate?: number;
   fourWheelerRate?: number;

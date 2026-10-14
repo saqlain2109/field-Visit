@@ -61,7 +61,7 @@ public class VisitExpense {
     @Column(name = "attachment_url", length = 550)
     private String attachmentUrl;
 
-    @Column(columnDefinition = "NVARCHAR(MAX)")
+    @Column(length = 4000)
     private String remarks;
 
     @CreationTimestamp
