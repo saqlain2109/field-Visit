@@ -4,14 +4,20 @@ import { Platform } from 'react-native';
 const STORAGE_KEY_API_URL = '@fv_api_base_url';
 const STORAGE_KEY_TOKEN = '@fv_auth_token';
 
-// Automatically choose best initial default
-export const getDefaultApiUrl = (): string => {
-  if (Platform.OS === 'android') {
-    // If running in standard Android emulator:
-    // Physical device on local Wi-Fi, host machine IP is 10.76.101.133
-    return 'http://10.76.101.133:4000/api';
+export const normalizeApiUrl = (raw: string): string => {
+  let clean = raw.trim().replace(/\/+$/, '');
+  if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
+    clean = `https://${clean}`;
   }
-  return 'http://localhost:4000/api';
+  if (!clean.endsWith('/api')) {
+    clean = `${clean}/api`;
+  }
+  return clean;
+};
+
+// Automatically choose best initial default (Public Cloud URL accessible everywhere on 4G/5G)
+export const getDefaultApiUrl = (): string => {
+  return 'https://tel-consists-layers-night.trycloudflare.com/api';
 };
 
 let currentApiUrl = getDefaultApiUrl();
@@ -19,14 +25,14 @@ let currentApiUrl = getDefaultApiUrl();
 // Load stored custom URL if user customized it
 AsyncStorage.getItem(STORAGE_KEY_API_URL).then((stored) => {
   if (stored && stored.trim().length > 0) {
-    currentApiUrl = stored.trim();
+    currentApiUrl = normalizeApiUrl(stored);
   }
 }).catch(() => {});
 
 export const getApiBaseUrl = (): string => currentApiUrl;
 
 export const setApiBaseUrl = async (url: string): Promise<void> => {
-  const cleanUrl = url.trim().replace(/\/+$/, '');
+  const cleanUrl = normalizeApiUrl(url);
   currentApiUrl = cleanUrl;
   await AsyncStorage.setItem(STORAGE_KEY_API_URL, cleanUrl);
 };
@@ -101,26 +107,26 @@ export const apiFetch = async <T = any>(endpoint: string, options: RequestInit =
 };
 
 export const testServerConnection = async (testUrl?: string): Promise<{ success: boolean; message: string }> => {
-  const urlToTest = (testUrl || getApiBaseUrl()).trim().replace(/\/+$/, '');
+  const urlToTest = normalizeApiUrl(testUrl || getApiBaseUrl());
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4000);
+    const timer = setTimeout(() => controller.abort(), 6000);
 
-    const res = await fetch(`${urlToTest}/masters/summary`, {
+    const res = await fetch(`${urlToTest}/health`, {
       method: 'GET',
       headers: { Accept: 'application/json' },
       signal: controller.signal,
     });
     clearTimeout(timer);
 
-    if (res.ok || res.status === 401 || res.status === 403) {
+    if (res.ok || res.status === 200 || res.status === 401 || res.status === 403) {
       return { success: true, message: 'Server reached successfully! (Port 4000 is online)' };
     }
     return { success: false, message: `Server replied with status ${res.status}` };
   } catch (e: any) {
     return {
       success: false,
-      message: `Cannot reach ${urlToTest}. Check if backend is running on port 4000 and phone is on the same Wi-Fi.`,
+      message: `Cannot reach ${urlToTest}. Please verify network and server URL. (${e.message})`,
     };
   }
 };

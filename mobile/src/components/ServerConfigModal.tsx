@@ -24,9 +24,9 @@ export const ServerConfigModal: React.FC<ServerConfigModalProps> = ({ visible, o
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const presets = [
-    { label: '🖥️ PC Wi-Fi (Recommended)', url: 'http://192.168.0.139:4000/api' },
+    { label: '☁️ Cloud Public Server (4G/5G)', url: 'https://tel-consists-layers-night.trycloudflare.com/api' },
+    { label: '🖥️ Local Wi-Fi (PC)', url: 'http://10.76.101.133:4000/api' },
     { label: '🤖 Android Emulator', url: 'http://10.0.2.2:4000/api' },
-    { label: '💻 Localhost (iOS/Web)', url: 'http://localhost:4000/api' },
   ];
 
   const handleTest = async () => {

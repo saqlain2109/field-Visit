@@ -7,28 +7,20 @@ services:
     plan: free
     region: singapore
     envVars:
-      - key: SPRING_DATASOURCE_URL
-        value: jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=require
-      - key: DB_HOST
+      - key: DATABASE_URL
         fromDatabase:
           name: fieldvisit-db
-          property: host
-      - key: DB_PORT
-        fromDatabase:
-          name: fieldvisit-db
-          property: port
-      - key: DB_NAME
-        fromDatabase:
-          name: fieldvisit-db
-          property: database
-      - key: DB_USER
+          property: connectionString
+      - key: SPRING_DATASOURCE_USERNAME
         fromDatabase:
           name: fieldvisit-db
           property: user
-      - key: DB_PASSWORD
+      - key: SPRING_DATASOURCE_PASSWORD
         fromDatabase:
           name: fieldvisit-db
           property: password
+      - key: SPRING_JPA_DATABASE_PLATFORM
+        value: org.hibernate.dialect.PostgreSQLDialect
       - key: SERVER_PORT
         value: "4000"
       - key: SPRING_JPA_HIBERNATE_DDL_AUTO

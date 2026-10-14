@@ -42,4 +42,4 @@ EXPOSE 4000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
   CMD curl -f http://localhost:4000/v3/api-docs || exit 1
 
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]
+ENTRYPOINT ["sh", "-c", "if [ -n \"$DATABASE_URL\" ]; then export SPRING_DATASOURCE_URL=$(echo \"$DATABASE_URL\" | sed -E 's/^(postgres|postgresql):\\/\\//jdbc:postgresql:\\/\\//'); fi; java $JAVA_OPTS -jar /app/app.jar"]
