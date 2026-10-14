@@ -46,8 +46,8 @@ export const ROLE_PRESETS: RolePreset[] = [
     id: 'service',
     role: 'SERVICE_ENG',
     title: 'Field Engineer',
-    name: 'Vishal (Grade B)',
-    email: 'vishal@crm.com',
+    name: 'Suresh Choudhary',
+    email: 'suresh@crm.com',
     password: 'Password@123',
     badgeColor: '#10B981',
   },
@@ -145,6 +145,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const payload: any = {
         identifier: identifier.trim(),
+        emailOrEmployeeNumber: identifier.trim(),
+        email: identifier.trim(),
+        username: identifier.trim(),
         password: pass,
         latitude: currentCoords ? currentCoords.latitude : 19.076,
         longitude: currentCoords ? currentCoords.longitude : 72.8777,

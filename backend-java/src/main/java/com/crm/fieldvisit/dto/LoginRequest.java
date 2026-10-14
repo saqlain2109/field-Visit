@@ -12,32 +12,39 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class LoginRequest {
 
+    private String identifier;
     private String username;
-
     private String email;
-
     private String emailOrEmployeeNumber;
-
     private String employeeNo;
 
     @NotBlank(message = "Password is required")
     private String password;
 
     private String deviceFingerprint;
-
     private String browserProfileId;
     private Double latitude;
     private Double longitude;
 
+    public void setIdentifier(String identifier) {
+        this.identifier = identifier;
+        if (this.emailOrEmployeeNumber == null || this.emailOrEmployeeNumber.isBlank()) {
+            this.emailOrEmployeeNumber = identifier;
+        }
+    }
+
     public String getIdentifier() {
-        if (username != null && !username.isBlank()) {
-            return username.trim();
+        if (identifier != null && !identifier.isBlank()) {
+            return identifier.trim();
+        }
+        if (emailOrEmployeeNumber != null && !emailOrEmployeeNumber.isBlank()) {
+            return emailOrEmployeeNumber.trim();
         }
         if (email != null && !email.isBlank()) {
             return email.trim();
         }
-        if (emailOrEmployeeNumber != null && !emailOrEmployeeNumber.isBlank()) {
-            return emailOrEmployeeNumber.trim();
+        if (username != null && !username.isBlank()) {
+            return username.trim();
         }
         if (employeeNo != null && !employeeNo.isBlank()) {
             return employeeNo.trim();
