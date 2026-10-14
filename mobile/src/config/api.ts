@@ -25,7 +25,13 @@ let currentApiUrl = getDefaultApiUrl();
 // Load stored custom URL if user customized it
 AsyncStorage.getItem(STORAGE_KEY_API_URL).then((stored) => {
   if (stored && stored.trim().length > 0) {
-    currentApiUrl = normalizeApiUrl(stored);
+    if (stored.includes('trycloudflare.com') || stored.includes('192.168.') || stored.includes('10.76.')) {
+      // Auto-migrate old transient tunnel or local IP URLs to Render Cloud backend
+      currentApiUrl = getDefaultApiUrl();
+      AsyncStorage.setItem(STORAGE_KEY_API_URL, currentApiUrl);
+    } else {
+      currentApiUrl = normalizeApiUrl(stored);
+    }
   }
 }).catch(() => {});
 

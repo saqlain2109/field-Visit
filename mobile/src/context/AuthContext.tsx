@@ -97,6 +97,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const bootstrapAsync = async () => {
     try {
+      const storedUrl = await AsyncStorage.getItem('@fv_api_base_url');
+      if (storedUrl && (storedUrl.includes('trycloudflare.com') || storedUrl.includes('192.168.') || storedUrl.includes('10.76.'))) {
+        await resetApiBaseUrl();
+      }
       setServerUrlState(getApiBaseUrl());
       const storedToken = await getAuthToken();
       const storedUser = await AsyncStorage.getItem(STORAGE_KEY_USER);
