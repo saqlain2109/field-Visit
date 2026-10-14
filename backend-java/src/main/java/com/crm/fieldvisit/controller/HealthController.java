@@ -44,10 +44,18 @@ public class HealthController {
 
         try (Connection conn = dataSource.getConnection()) {
             DatabaseMetaData metaData = conn.getMetaData();
-            String dbVersion = jdbcTemplate.queryForObject("SELECT @@VERSION", String.class);
-            String dbName = jdbcTemplate.queryForObject("SELECT DB_NAME()", String.class);
-            Integer tableCount = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM sys.tables WHERE is_ms_shipped = 0", Integer.class);
+            String prodName = metaData.getDatabaseProductName().toLowerCase();
+            boolean isPostgres = prodName.contains("postgres");
+
+            String dbVersion = isPostgres 
+                    ? jdbcTemplate.queryForObject("SELECT version()", String.class)
+                    : jdbcTemplate.queryForObject("SELECT @@VERSION", String.class);
+            String dbName = isPostgres
+                    ? jdbcTemplate.queryForObject("SELECT current_database()", String.class)
+                    : jdbcTemplate.queryForObject("SELECT DB_NAME()", String.class);
+            Integer tableCount = isPostgres
+                    ? jdbcTemplate.queryForObject("SELECT COUNT(*)::int FROM information_schema.tables WHERE table_schema = 'public'", Integer.class)
+                    : jdbcTemplate.queryForObject("SELECT COUNT(*) FROM sys.tables WHERE is_ms_shipped = 0", Integer.class);
 
             long latencyMs = System.currentTimeMillis() - startTime;
 
@@ -61,7 +69,7 @@ public class HealthController {
             details.put("queryLatencyMs", latencyMs);
             details.put("serverVersionDetails", dbVersion != null && dbVersion.length() > 60 ? dbVersion.substring(0, 60) + "..." : dbVersion);
 
-            return ResponseEntity.ok(ApiResponse.success("Successfully connected to Microsoft SQL Server", details));
+            return ResponseEntity.ok(ApiResponse.success("Successfully connected to " + metaData.getDatabaseProductName(), details));
         } catch (Exception e) {
             details.put("status", "DISCONNECTED");
             details.put("error", e.getMessage());
