@@ -22,6 +22,9 @@ dist/
 build/
 **/build/
 .cache/
+*.apk
+.expo/
+**/.expo/
 
 # Environment Variables & Secrets
 .env

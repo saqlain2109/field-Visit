@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: field-visit-backend
+    runtime: docker
+    dockerfilePath: ./backend-java/Dockerfile
+    dockerContext: ./backend-java
+    plan: free
+    region: singapore
+    envVars:
+      - key: SPRING_DATASOURCE_URL
+        value: jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=require
+      - key: DB_HOST
+        fromDatabase:
+          name: fieldvisit-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: fieldvisit-db
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: fieldvisit-db
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: fieldvisit-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: fieldvisit-db
+          property: password
+      - key: SERVER_PORT
+        value: "4000"
+      - key: SPRING_JPA_HIBERNATE_DDL_AUTO
+        value: update
+      - key: HIKARI_MAX_POOL
+        value: "4"
+      - key: HIKARI_MIN_IDLE
+        value: "1"
+
+databases:
+  - name: fieldvisit-db
+    databaseName: field_visit
+    user: fieldvisit_user
+    plan: free
+    region: singapore
